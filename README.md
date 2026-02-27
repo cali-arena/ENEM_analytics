@@ -158,6 +158,17 @@ A separate **insanely fast** app reads Parquet directly from Cloudflare R2 (S3-c
 - **Paths:** `s3://<bucket>/silver/...`, `s3://<bucket>/gold/...` (bronze optional).
 - Override prefixes with secrets: `R2_SILVER_PREFIX`, `R2_GOLD_PREFIX`, `R2_BRONZE_PREFIX`.
 
+### Demo no R2 (dados mockados)
+
+Se o bucket estiver vazio e o app mostrar "Nenhum dado para os filtros" ou KPIs vazios, use dados sintéticos:
+
+```bash
+pip install boto3 pandas pyarrow
+python scripts/build_and_upload_demo_r2.py
+```
+
+O script gera Parquets mínimos (kpis_uf_ano, cluster_profiles, cluster_evolution_uf_ano, quality_report, null_report) e envia para o R2. Credenciais: `.streamlit/secrets.toml` ou variáveis `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`. Depois, no app, clique em **Refresh cache** e recarregue a página.
+
 ### Troubleshooting (R2 + DuckDB)
 
 | Issue | What to check |
