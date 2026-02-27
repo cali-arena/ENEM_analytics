@@ -8,11 +8,17 @@ import sys
 import os
 import time
 import datetime
+from pathlib import Path
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+
+# Garantir que o diretório raiz do projeto esteja no sys.path
+_ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(_ROOT_DIR))
 
 from app.paths import ROOT, DATA_DIR, RAW_DIR, GOLD_DIR, SILVER_DIR, REPORTS_DIR, LOGS_DIR
 from app.db import get_connection, table_exists, list_loaded_tables
