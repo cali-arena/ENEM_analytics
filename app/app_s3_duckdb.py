@@ -38,6 +38,14 @@ from app.lib.storage_r2 import (
     gold_s3_uri,
 )
 from app.lib.duckdb_conn import get_connection, run_self_test
+from app.components import (
+    inject_dark_theme_css,
+    section_header_anchor,
+    section_divider,
+    toc_links,
+    kpi_row,
+    data_sources_badge,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -226,8 +234,15 @@ def _query_top_categories(con_key: int, uri: str, col: str, limit: int = 20) -> 
 # Page
 # -----------------------------------------------------------------------------
 def main():
-    st.set_page_config(page_title="Data Lake (R2 + DuckDB)", layout="wide")
+    st.set_page_config(
+        page_title="Data Lake (R2 + DuckDB)",
+        layout="wide",
+        initial_sidebar_state="expanded",
+    )
+    inject_dark_theme_css()
+    st.markdown('<p id="top"></p>', unsafe_allow_html=True)
     st.title("Data Lake — Parquet on R2 (DuckDB)")
+    st.caption("Parquet no Cloudflare R2 via DuckDB — Silver & Gold")
 
     # Secrets: from Streamlit or env
     try:
@@ -278,6 +293,25 @@ def main():
             st.session_state["_schema"] = discover_schema(con, silver_uri, gold_uri)
     schema = st.session_state["_schema"]
 
+    # Header: TOC + data badge (same style as app_one_page)
+    loaded = []
+    if schema.get("silver_ok"):
+        loaded.append("Silver")
+    if schema.get("gold_ok"):
+        loaded.append("Gold")
+    has_kpis = schema.get("gold_ok")
+    row1 = st.columns([3, 1])
+    with row1[0]:
+        toc_links([
+            ("Visão geral", "sec-kpis"),
+            ("Schema Inspector", "sec-schema"),
+            ("Charts", "sec-charts"),
+            ("Amostra Gold", "sec-sample"),
+        ])
+    with row1[1]:
+        data_sources_badge(loaded, has_kpis)
+    st.markdown("---")
+
     # Refresh cache button
     if st.sidebar.button("Refresh cache"):
         _query_silver_count.clear()
@@ -304,24 +338,22 @@ def main():
 
     con_key = id(con)
 
-    # KPIs
-    st.subheader("KPIs")
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
-        n_silver = _query_silver_count(con_key, silver_uri)
-        st.metric("Silver rows", f"{n_silver:,}")
-    with c2:
-        n_gold = _query_gold_count(con_key, gold_uri)
-        st.metric("Gold rows", f"{n_gold:,}")
-    with c3:
-        latest = _query_latest_ts(con_key, silver_uri, time_col) if time_col else _query_latest_ts(con_key, gold_uri, time_col)
-        st.metric("Latest (time)", latest or "—")
-    with c4:
-        distinct_n = _query_distinct_count(con_key, silver_uri, tenant_col) if tenant_col else _query_distinct_count(con_key, gold_uri, tenant_col)
-        st.metric("Distinct tenants" if tenant_col else "Distinct (tenant col)", f"{distinct_n:,}" if tenant_col else "—")
+    # Section: Visão geral (KPIs)
+    section_header_anchor("Visão geral", "sec-kpis", level=2)
+    n_silver = _query_silver_count(con_key, silver_uri)
+    n_gold = _query_gold_count(con_key, gold_uri)
+    latest = _query_latest_ts(con_key, silver_uri, time_col) if time_col else _query_latest_ts(con_key, gold_uri, time_col)
+    distinct_n = _query_distinct_count(con_key, silver_uri, tenant_col) if tenant_col else _query_distinct_count(con_key, gold_uri, tenant_col)
+    kpi_row([
+        ("Silver rows", f"{n_silver:,}"),
+        ("Gold rows", f"{n_gold:,}"),
+        ("Latest (time)", latest or "—"),
+        ("Distinct tenants" if tenant_col else "Distinct (tenant col)", f"{distinct_n:,}" if tenant_col else "—"),
+    ])
+    section_divider()
 
-    # Schema inspector
-    st.subheader("Schema Inspector")
+    # Section: Schema Inspector
+    section_header_anchor("Schema Inspector", "sec-schema", level=2)
     with st.expander("Silver & Gold columns and detected dimensions", expanded=False):
         st.write("**Silver** (ok=", schema["silver_ok"], "): ", schema["silver_columns"] or "—")
         st.write("**Gold** (ok=", schema["gold_ok"], "): ", schema["gold_columns"] or "—")
@@ -331,9 +363,10 @@ def main():
             "| Project:", project_col or "—",
             "| Status:", status_col or "—",
         )
+    section_divider()
 
-    # Charts (only if we have columns)
-    st.subheader("Charts")
+    # Section: Charts
+    section_header_anchor("Charts", "sec-charts", level=2)
 
     if time_col:
         uri_ts = silver_uri if schema["silver_ok"] else gold_uri
@@ -370,9 +403,10 @@ def main():
         if not df_dist.empty and HAS_PLOTLY:
             fig = px.pie(df_dist, values="cnt", names="category", title=f"Distribution by {status_col}")
             st.plotly_chart(fig, use_container_width=True)
+    section_divider()
 
-    # Small table sample (avoid loading full data)
-    st.subheader("Sample (Gold)")
+    # Section: Amostra Gold
+    section_header_anchor("Amostra Gold", "sec-sample", level=2)
     if schema["gold_ok"]:
         try:
             sample = con.execute(
@@ -383,6 +417,10 @@ def main():
             st.caption(f"Sample load failed: {e}")
     else:
         st.caption("Gold layer not available or empty.")
+
+    section_divider()
+    st.markdown('[↑ Voltar ao topo](#top)')
+    st.caption("Dados: s3://<bucket>/silver · s3://<bucket>/gold")
 
 
 if __name__ == "__main__":
