@@ -48,9 +48,10 @@ def run_self_test(con, silver_uri: str, gold_uri: str) -> tuple[bool, str]:
     Run a lightweight query against silver and gold to verify credentials and paths.
     Returns (success, message).
     """
+    # Use hive_partitioning=0 so mixed layouts (root-level + Hive-partitioned) don't mismatch
     for name, uri in [("silver", silver_uri), ("gold", gold_uri)]:
         try:
-            con.execute(f"SELECT 1 FROM read_parquet('{uri}', hive_partitioning=1) LIMIT 1")
+            con.execute(f"SELECT 1 FROM read_parquet('{uri}', hive_partitioning=0) LIMIT 1")
         except Exception as e:
             return False, f"Failed to read {name} at {uri}: {e}"
     return True, "OK"

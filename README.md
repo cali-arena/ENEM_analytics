@@ -165,7 +165,7 @@ A separate **insanely fast** app reads Parquet directly from Cloudflare R2 (S3-c
 | **Connection / 403 Forbidden** | Credentials are valid but token has no permission. In Cloudflare Dashboard → R2 → **Manage R2 API Tokens**: create a token with **Object Read** (and list) on the bucket; use the new Access Key and Secret in Secrets. |
 | **Endpoint** | Use the full URL: `https://<account_id>.r2.cloudflarestorage.com`. The app uses path-style URLs (`s3_url_style='path'`). |
 | **No data / empty** | Bucket and prefixes: files must be under `silver/` and `gold/` (or your custom prefixes). Use `**/*.parquet` so DuckDB can scan. |
-| **Hive partitioning** | The app uses `hive_partitioning=1`; if your paths are flat (no `key=value` dirs), DuckDB still reads; if you use partitions (e.g. `ano=2022`), they are used. |
+| **Hive partition mismatch** | If you see "Hive partition mismatch between file ... and ...", your `gold/` (or `silver/`) has both root-level Parquet files and Hive-partitioned dirs (e.g. `ano=2020/`). The app uses `hive_partitioning=0` so both layouts work; partition columns from paths are not auto-added. |
 | **Streamlit “run failed”** | Check Cloud logs for the exact DuckDB or R2 error; often endpoint typo or missing secret. |
 | **“Não foi possível preparar dados Gold” / “DEMO_GOLD_URL”** | The app running is `app_one_page.py` (expects local data or demo zip). To use **R2** with the data you uploaded: set **Main file path** to `app/app_s3_duckdb.py` and keep R2 secrets. |
 

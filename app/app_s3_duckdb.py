@@ -84,7 +84,7 @@ def discover_schema(con, silver_uri: str, gold_uri: str) -> dict:
     # Silver
     try:
         df = con.execute(
-            f"SELECT * FROM read_parquet('{silver_uri}', hive_partitioning=1) LIMIT 1"
+            f"SELECT * FROM read_parquet('{silver_uri}', hive_partitioning=0) LIMIT 1"
         ).fetchdf()
         cols = df.columns.tolist()
         out["silver_columns"] = cols
@@ -98,7 +98,7 @@ def discover_schema(con, silver_uri: str, gold_uri: str) -> dict:
     # Gold: try first table-like path (gold often has multiple parquet trees; we scan one)
     try:
         df = con.execute(
-            f"SELECT * FROM read_parquet('{gold_uri}', hive_partitioning=1) LIMIT 1"
+            f"SELECT * FROM read_parquet('{gold_uri}', hive_partitioning=0) LIMIT 1"
         ).fetchdf()
         cols = df.columns.tolist()
         out["gold_columns"] = cols
@@ -136,7 +136,7 @@ def _query_silver_count(con_key: int, silver_uri: str) -> int:
         return 0
     try:
         return con.execute(
-            f"SELECT count(*) AS n FROM read_parquet('{silver_uri}', hive_partitioning=1)"
+            f"SELECT count(*) AS n FROM read_parquet('{silver_uri}', hive_partitioning=0)"
         ).fetchone()[0]
     except Exception:
         return 0
@@ -149,7 +149,7 @@ def _query_gold_count(con_key: int, gold_uri: str) -> int:
         return 0
     try:
         return con.execute(
-            f"SELECT count(*) AS n FROM read_parquet('{gold_uri}', hive_partitioning=1)"
+            f"SELECT count(*) AS n FROM read_parquet('{gold_uri}', hive_partitioning=0)"
         ).fetchone()[0]
     except Exception:
         return 0
@@ -163,7 +163,7 @@ def _query_latest_ts(con_key: int, uri: str, time_col: str) -> str | None:
     try:
         safe_col = f'"{time_col}"' if not time_col.replace("_", "").isalnum() else time_col
         r = con.execute(
-            f"SELECT max({safe_col}) AS m FROM read_parquet('{uri}', hive_partitioning=1)"
+            f"SELECT max({safe_col}) AS m FROM read_parquet('{uri}', hive_partitioning=0)"
         ).fetchone()[0]
         return str(r) if r is not None else None
     except Exception:
@@ -178,7 +178,7 @@ def _query_distinct_count(con_key: int, uri: str, col: str) -> int:
     try:
         safe_col = f'"{col}"' if not col.replace("_", "").isalnum() else col
         return con.execute(
-            f"SELECT count(DISTINCT {safe_col}) AS n FROM read_parquet('{uri}', hive_partitioning=1)"
+            f"SELECT count(DISTINCT {safe_col}) AS n FROM read_parquet('{uri}', hive_partitioning=0)"
         ).fetchone()[0]
     except Exception:
         return 0
@@ -193,7 +193,7 @@ def _query_timeseries(con_key: int, uri: str, time_col: str, limit: int = 500) -
         safe_col = f'"{time_col}"' if not time_col.replace("_", "").isalnum() else time_col
         q = f"""
         SELECT {safe_col} AS dt, count(*) AS cnt
-        FROM read_parquet('{uri}', hive_partitioning=1)
+        FROM read_parquet('{uri}', hive_partitioning=0)
         WHERE {safe_col} IS NOT NULL
         GROUP BY 1 ORDER BY 1
         LIMIT {limit}
@@ -212,7 +212,7 @@ def _query_top_categories(con_key: int, uri: str, col: str, limit: int = 20) -> 
         safe_col = f'"{col}"' if not col.replace("_", "").isalnum() else col
         q = f"""
         SELECT {safe_col} AS category, count(*) AS cnt
-        FROM read_parquet('{uri}', hive_partitioning=1)
+        FROM read_parquet('{uri}', hive_partitioning=0)
         WHERE {safe_col} IS NOT NULL
         GROUP BY 1 ORDER BY 2 DESC
         LIMIT {limit}
@@ -376,7 +376,7 @@ def main():
     if schema["gold_ok"]:
         try:
             sample = con.execute(
-                f"SELECT * FROM read_parquet('{gold_uri}', hive_partitioning=1) LIMIT 100"
+                f"SELECT * FROM read_parquet('{gold_uri}', hive_partitioning=0) LIMIT 100"
             ).fetchdf()
             st.dataframe(sample, use_container_width=True)
         except Exception as e:
