@@ -257,10 +257,18 @@ def main():
     # Self-test on load
     ok, msg = run_self_test(con, silver_uri, gold_uri)
     if not ok:
+        hint_403 = ""
+        if "403" in msg or "Forbidden" in msg:
+            hint_403 = (
+                " **HTTP 403:** No painel do Cloudflare R2, o token de API precisa ter permissão "
+                "**Object Read** (e listagem) no bucket. Crie um novo token em R2 → Manage R2 API Tokens "
+                "com acesso de leitura ao bucket `datalake` e use o novo Access Key e Secret nas Secrets. "
+            )
         st.error(
             f"**Connection self-test failed:** {msg}. "
             "Check bucket name (R2_BUCKET), path prefixes (silver/gold), and R2 permissions. "
-            "Ensure endpoint uses path-style (e.g. `https://<accountid>.r2.cloudflarestorage.com`)."
+            "Ensure endpoint is exactly `https://<accountid>.r2.cloudflarestorage.com` (no spaces)."
+            + hint_403
         )
         st.stop()
 

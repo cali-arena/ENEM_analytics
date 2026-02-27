@@ -28,13 +28,17 @@ def get_connection(secrets: dict[str, Any] | None = None):
     # Load S3/httpfs support
     con.execute("INSTALL httpfs; LOAD httpfs;")
 
+    # Escape single quotes in credentials so SET commands don't break
+    def _esc(s: str) -> str:
+        return (s or "").replace("\\", "\\\\").replace("'", "''")
+
     # R2 uses path-style URLs and custom endpoint
     con.execute("SET s3_url_style = 'path';")
     con.execute("SET s3_use_ssl = true;")
-    con.execute(f"SET s3_region = '{config['region']}';")
-    con.execute(f"SET s3_endpoint = '{config['endpoint_host']}';")
-    con.execute(f"SET s3_access_key_id = '{config['access_key']}';")
-    con.execute(f"SET s3_secret_access_key = '{config['secret_key']}';")
+    con.execute(f"SET s3_region = '{_esc(config['region'])}';")
+    con.execute(f"SET s3_endpoint = '{_esc(config['endpoint_host'])}';")
+    con.execute(f"SET s3_access_key_id = '{_esc(config['access_key'])}';")
+    con.execute(f"SET s3_secret_access_key = '{_esc(config['secret_key'])}';")
 
     return con
 
