@@ -7,6 +7,7 @@ pyspark>=3.5.0
 # Analytics & storage
 duckdb>=0.9.0
 pyarrow>=14.0.0
+fsspec>=2023.0.0
 
 # UI & dashboards
 streamlit>=1.28.0
@@ -25,6 +26,9 @@ matplotlib>=3.8.0
 # Coleta (download)
 requests>=2.31.0
 tqdm>=4.66.0
+
+# R2 upload (S3 protocol)
+boto3>=1.28.0
 
 # Assistant / LLM (optional)
 python-dotenv>=1.0.0

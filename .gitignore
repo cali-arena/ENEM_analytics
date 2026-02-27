@@ -11,6 +11,7 @@ data/bronze/
 data/silver/
 data/gold/
 data/*.zip
+demo_gold.zip
 tmp/
 logs/
 reports/
@@ -19,7 +20,9 @@ reports/
 .vscode/
 .idea/
 
-# Streamlit
+# Streamlit & secrets (user creates .streamlit/secrets.toml locally)
 .streamlit/credentials.toml
 .streamlit/secrets.toml
+.env
+*.key
 

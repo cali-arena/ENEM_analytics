@@ -6,3 +6,7 @@ secondaryBackgroundColor = "#111827"
 textColor = "#e5e7eb"
 font = "sans serif"
 
+[server]
+# Optional: reduce memory by limiting file watcher
+fileWatcherType = "none"
+maxUploadSize = 200
