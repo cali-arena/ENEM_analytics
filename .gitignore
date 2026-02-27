@@ -1,0 +1,25 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+env/
+venv/
+
+# Data & artifacts (keep local only)
+data/raw/
+data/bronze/
+data/silver/
+data/gold/
+data/*.zip
+tmp/
+logs/
+reports/
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Streamlit
+.streamlit/credentials.toml
+.streamlit/secrets.toml
+

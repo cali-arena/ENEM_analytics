@@ -1,0 +1,43 @@
+============================================================
+VALIDAÇÃO DOS MICRODADOS ENEM (data/raw)
+Fonte: INEP - https://www.gov.br/inep/.../microdados/enem
+============================================================
+
+[2020] C:\Users\lucas\spark\data\raw\ENEM_2020.csv
+  Estrutura: OK (colunas oficiais INEP)
+  Colunas: 76
+  Amostra de linhas: 5
+  Estrutura: completa (notas e presença)
+  AVISO: Amostra com valores inesperados (verifique)
+
+[2021] C:\Users\lucas\spark\data\raw\ENEM_2021.csv
+  Estrutura: OK (colunas oficiais INEP)
+  Colunas: 76
+  Amostra de linhas: 5
+  Estrutura: completa (notas e presença)
+  AVISO: Amostra com valores inesperados (verifique)
+
+[2022] C:\Users\lucas\spark\data\raw\ENEM_2022.csv
+  Estrutura: OK (colunas oficiais INEP)
+  Colunas: 76
+  Amostra de linhas: 5
+  Estrutura: completa (notas e presença)
+  AVISO: Amostra com valores inesperados (verifique)
+
+[2023] C:\Users\lucas\spark\data\raw\ENEM_2023.csv
+  Estrutura: OK (colunas oficiais INEP)
+  Colunas: 76
+  Amostra de linhas: 5
+  Estrutura: completa (notas e presença)
+  AVISO: Amostra com valores inesperados (verifique)
+
+[2024] C:\Users\lucas\spark\data\raw\ENEM_2024.csv
+  Estrutura: OK (colunas oficiais INEP)
+  Colunas: 75
+  Amostra de linhas: 5
+  Estrutura: completa (notas e presença)
+  AVISO: Amostra com valores inesperados (verifique)
+
+============================================================
+RESULTADO: Dados verídicos (estrutura INEP; uso oficial).
+============================================================

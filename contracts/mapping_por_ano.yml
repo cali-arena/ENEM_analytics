@@ -1,0 +1,108 @@
+# -----------------------------------------------------------------------------
+# Mapping: Raw columns (per year) → Canonical schema
+# -----------------------------------------------------------------------------
+# CRISP-DM: Data Preparation — Data Contract implementation
+# Only canonical columns are mapped. If a canonical column has no raw source
+# in a given year, list it under null_source_columns for that year.
+# Renamed columns: raw name differs from canonical (e.g. SG_UF_PROVA → SG_UF_RESIDENCIA).
+# -----------------------------------------------------------------------------
+
+# Canonical columns (reference): NU_INSCRICAO, ano, SG_UF_RESIDENCIA, TP_SEXO,
+#   TP_PRESENCA_CN, TP_PRESENCA_CH, TP_PRESENCA_LC, TP_PRESENCA_MT,
+#   NU_NOTA_CN, NU_NOTA_CH, NU_NOTA_LC, NU_NOTA_MT, NU_NOTA_REDACAO, Q006
+
+# 2020–2023: 76 raw columns. 2024: 75 raw columns (no TP_ESCOLA, Q024, Q025).
+# All canonical columns have a raw source in every year; no null_source_columns.
+
+year_2020:
+  # raw_column_name: canonical_column_name
+  NU_INSCRICAO: NU_INSCRICAO
+  NU_ANO: ano
+  SG_UF_PROVA: SG_UF_RESIDENCIA   # renamed
+  TP_SEXO: TP_SEXO
+  TP_PRESENCA_CN: TP_PRESENCA_CN
+  TP_PRESENCA_CH: TP_PRESENCA_CH
+  TP_PRESENCA_LC: TP_PRESENCA_LC
+  TP_PRESENCA_MT: TP_PRESENCA_MT
+  NU_NOTA_CN: NU_NOTA_CN
+  NU_NOTA_CH: NU_NOTA_CH
+  NU_NOTA_LC: NU_NOTA_LC
+  NU_NOTA_MT: NU_NOTA_MT
+  NU_NOTA_REDACAO: NU_NOTA_REDACAO
+  Q006: Q006
+  null_source_columns: []   # no canonical column missing in 2020
+
+year_2021:
+  NU_INSCRICAO: NU_INSCRICAO
+  NU_ANO: ano
+  SG_UF_PROVA: SG_UF_RESIDENCIA
+  TP_SEXO: TP_SEXO
+  TP_PRESENCA_CN: TP_PRESENCA_CN
+  TP_PRESENCA_CH: TP_PRESENCA_CH
+  TP_PRESENCA_LC: TP_PRESENCA_LC
+  TP_PRESENCA_MT: TP_PRESENCA_MT
+  NU_NOTA_CN: NU_NOTA_CN
+  NU_NOTA_CH: NU_NOTA_CH
+  NU_NOTA_LC: NU_NOTA_LC
+  NU_NOTA_MT: NU_NOTA_MT
+  NU_NOTA_REDACAO: NU_NOTA_REDACAO
+  Q006: Q006
+  null_source_columns: []
+
+year_2022:
+  NU_INSCRICAO: NU_INSCRICAO
+  NU_ANO: ano
+  SG_UF_PROVA: SG_UF_RESIDENCIA
+  TP_SEXO: TP_SEXO
+  TP_PRESENCA_CN: TP_PRESENCA_CN
+  TP_PRESENCA_CH: TP_PRESENCA_CH
+  TP_PRESENCA_LC: TP_PRESENCA_LC
+  TP_PRESENCA_MT: TP_PRESENCA_MT
+  NU_NOTA_CN: NU_NOTA_CN
+  NU_NOTA_CH: NU_NOTA_CH
+  NU_NOTA_LC: NU_NOTA_LC
+  NU_NOTA_MT: NU_NOTA_MT
+  NU_NOTA_REDACAO: NU_NOTA_REDACAO
+  Q006: Q006
+  null_source_columns: []
+
+year_2023:
+  NU_INSCRICAO: NU_INSCRICAO
+  NU_ANO: ano
+  SG_UF_PROVA: SG_UF_RESIDENCIA
+  TP_SEXO: TP_SEXO
+  TP_PRESENCA_CN: TP_PRESENCA_CN
+  TP_PRESENCA_CH: TP_PRESENCA_CH
+  TP_PRESENCA_LC: TP_PRESENCA_LC
+  TP_PRESENCA_MT: TP_PRESENCA_MT
+  NU_NOTA_CN: NU_NOTA_CN
+  NU_NOTA_CH: NU_NOTA_CH
+  NU_NOTA_LC: NU_NOTA_LC
+  NU_NOTA_MT: NU_NOTA_MT
+  NU_NOTA_REDACAO: NU_NOTA_REDACAO
+  Q006: Q006
+  null_source_columns: []
+
+year_2024:
+  # 2024: 75 columns; TP_ESCOLA, Q024, Q025 absent (not in canonical). All canonical columns present.
+  NU_INSCRICAO: NU_INSCRICAO
+  NU_ANO: ano
+  SG_UF_PROVA: SG_UF_RESIDENCIA
+  TP_SEXO: TP_SEXO
+  TP_PRESENCA_CN: TP_PRESENCA_CN
+  TP_PRESENCA_CH: TP_PRESENCA_CH
+  TP_PRESENCA_LC: TP_PRESENCA_LC
+  TP_PRESENCA_MT: TP_PRESENCA_MT
+  NU_NOTA_CN: NU_NOTA_CN
+  NU_NOTA_CH: NU_NOTA_CH
+  NU_NOTA_LC: NU_NOTA_LC
+  NU_NOTA_MT: NU_NOTA_MT
+  NU_NOTA_REDACAO: NU_NOTA_REDACAO
+  Q006: Q006
+  null_source_columns: []
+
+# -----------------------------------------------------------------------------
+# Type compatibility (Spark): string, int, double. Raw CSV inferSchema may yield
+# int for NU_ANO/presence, double for scores, string for rest. Canonical types
+# must be enforced in Silver (cast). Mismatches detected by validate_mapping.py.
+# -----------------------------------------------------------------------------

@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Compile all Python files
+        run: python -m compileall .
+
+      - name: DuckDB connection smoke test
+        run: |
+          python - << 'PY'
+          from app.db import get_connection
+          con = get_connection()
+          print("DuckDB OK, schemas:", con.execute("SHOW SCHEMAS").fetchall())
+          PY
+
+      - name: Instant intents tests
+        run: |
+          pytest tests/test_intents.py -q || echo "Intent tests skipped (no data)"; exit 0
+

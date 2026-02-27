@@ -1,0 +1,147 @@
+# -----------------------------------------------------------------------------
+# Data Contract: Canonical Schema — ENEM Opportunity & Equity Radar (2020–2024)
+# -----------------------------------------------------------------------------
+# CRISP-DM: Data Preparation (Part 1 — Data Contract)
+# Scope: Silver and Gold layers. Bronze remains untouched.
+# Source of truth for column names, types, validation rules, and modeling use.
+# -----------------------------------------------------------------------------
+
+schema_version: "1.0"
+domain: "enem_microdata"
+valid_from: "2020"
+valid_to: "2024"
+owner: "data_engineering"
+
+columns:
+  - name: NU_INSCRICAO
+    type: string
+    description: "Unique candidate registration identifier per exam edition (INEP). Primary key for deduplication within year."
+    validation_rules:
+      - non_empty_string
+      - no_leading_trailing_whitespace
+    required: true
+    modeling_use: "identifier; do not use as feature. Required for join and dedup."
+
+  - name: ano
+    type: int
+    description: "Exam year (edition). 2020, 2021, 2022, 2023, or 2024. Partition key in Gold."
+    validation_rules:
+      - allowed_values: [2020, 2021, 2022, 2023, 2024]
+    required: true
+    modeling_use: "partition; filter and trend grouping. Required for time-series and year-on-year KPIs."
+
+  - name: SG_UF_RESIDENCIA
+    type: string
+    description: "Two-letter Brazilian state code (federative unit). Sourced from SG_UF_PROVA in raw INEP when SG_UF_RESIDENCIA is absent. Geographic dimension for aggregation."
+    validation_rules:
+      - must_be_valid_brazilian_state_code
+      - uppercase
+      - length: 2
+    required: false
+    modeling_use: "categorical feature; geographic aggregation. Null allowed for records missing location."
+
+  - name: TP_SEXO
+    type: string
+    description: "Biological sex as declared by candidate. Demographics and equity disaggregation."
+    validation_rules:
+      - allowed_values: ["M", "F"]
+      - uppercase
+    required: false
+    modeling_use: "categorical feature; fairness and equity analysis. Null excluded in Silver for performance cohort."
+
+  - name: TP_PRESENCA_CN
+    type: int
+    description: "Presence flag for Natural Sciences exam (Ciências da Natureza). INEP code: 0=absent, 1=present, 2=eliminated."
+    validation_rules:
+      - allowed_values: [0, 1, 2]
+    required: true
+    modeling_use: "filter: keep only rows with 1 for valid performance cohort. Do not use as model feature in score prediction."
+
+  - name: TP_PRESENCA_CH
+    type: int
+    description: "Presence flag for Human Sciences exam (Ciências Humanas). INEP code: 0=absent, 1=present, 2=eliminated."
+    validation_rules:
+      - allowed_values: [0, 1, 2]
+    required: true
+    modeling_use: "filter: keep only rows with 1 for valid performance cohort."
+
+  - name: TP_PRESENCA_LC
+    type: int
+    description: "Presence flag for Languages and Codes exam (Linguagens e Códigos). INEP code: 0=absent, 1=present, 2=eliminated."
+    validation_rules:
+      - allowed_values: [0, 1, 2]
+    required: true
+    modeling_use: "filter: keep only rows with 1 for valid performance cohort."
+
+  - name: TP_PRESENCA_MT
+    type: int
+    description: "Presence flag for Mathematics exam (Matemática). INEP code: 0=absent, 1=present, 2=eliminated."
+    validation_rules:
+      - allowed_values: [0, 1, 2]
+    required: true
+    modeling_use: "filter: keep only rows with 1 for valid performance cohort."
+
+  - name: NU_NOTA_CN
+    type: double
+    description: "Standardized score for Ciências da Natureza. Scale 0–1000. Null when candidate absent or result withheld."
+    validation_rules:
+      - between: [0, 1000]
+      - null_allowed_when_presence_not_1
+    required: true
+    modeling_use: "target or feature; component of MEDIA_OBJETIVA. Required non-null after presence filter for performance analyses."
+
+  - name: NU_NOTA_CH
+    type: double
+    description: "Standardized score for Ciências Humanas. Scale 0–1000. Null when candidate absent or result withheld."
+    validation_rules:
+      - between: [0, 1000]
+      - null_allowed_when_presence_not_1
+    required: true
+    modeling_use: "target or feature; component of MEDIA_OBJETIVA. Required non-null after presence filter."
+
+  - name: NU_NOTA_LC
+    type: double
+    description: "Standardized score for Linguagens e Códigos. Scale 0–1000. Null when candidate absent or result withheld."
+    validation_rules:
+      - between: [0, 1000]
+      - null_allowed_when_presence_not_1
+    required: true
+    modeling_use: "target or feature; component of MEDIA_OBJETIVA. Required non-null after presence filter."
+
+  - name: NU_NOTA_MT
+    type: double
+    description: "Standardized score for Matemática. Scale 0–1000. Null when candidate absent or result withheld."
+    validation_rules:
+      - between: [0, 1000]
+      - null_allowed_when_presence_not_1
+    required: true
+    modeling_use: "target or feature; component of MEDIA_OBJETIVA. Required non-null after presence filter."
+
+  - name: NU_NOTA_REDACAO
+    type: double
+    description: "Essay (redação) score. Scale 0–1000. Null when candidate absent, disqualified, or result withheld."
+    validation_rules:
+      - between: [0, 1000]
+      - null_allowed_when_absent_or_disqualified
+    required: true
+    modeling_use: "target or feature; used for REDACAO_800_PLUS and equity metrics. Required non-null after validity filter for full-score analyses."
+
+  - name: Q006
+    type: string
+    description: "Income bracket from socioeconomic questionnaire. INEP codes A (lowest) through Q (highest). Sensitive; non-response yields null."
+    validation_rules:
+      - allowed_values: ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q"]
+      - uppercase
+      - null_allowed
+    required: false
+    modeling_use: "categorical or ordinal (Q006_ORDINAL) feature; equity and gap analysis. Null must be documented; consider 'unknown' category."
+
+# -----------------------------------------------------------------------------
+# Validation rule reference (implementation hints)
+# -----------------------------------------------------------------------------
+# must_be_valid_brazilian_state_code:
+#   valid_codes: [AC, AL, AP, AM, BA, CE, DF, ES, GO, MA, MG, MS, MT, PA, PB, PE, PI, PR, RJ, RN, RS, RO, RR, SC, SP, SE, TO]
+# between: [min, max] — inclusive; apply only when value is non-null
+# null_allowed_when_presence_not_1: for score columns; null is valid when corresponding TP_PRESENCA_* != 1
+# null_allowed_when_absent_or_disqualified: for NU_NOTA_REDACAO; null when candidate did not sit or was eliminated
+# -----------------------------------------------------------------------------

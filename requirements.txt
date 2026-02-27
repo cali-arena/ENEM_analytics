@@ -1,0 +1,37 @@
+# ENEM Opportunity & Equity Radar — deployment & demo
+# Python 3.10+
+
+# Pipelines (Spark)
+pyspark>=3.5.0
+
+# Analytics & storage
+duckdb>=0.9.0
+pyarrow>=14.0.0
+
+# UI & dashboards
+streamlit>=1.28.0
+plotly>=5.18.0
+
+# Display (UI only; avoid pandas in pipelines)
+pandas>=2.0.0
+numpy>=1.24.0
+
+# ML & clustering (sklearn if Spark not used for clustering)
+scikit-learn>=1.3.0
+
+# Visualization
+matplotlib>=3.8.0
+
+# Coleta (download)
+requests>=2.31.0
+tqdm>=4.66.0
+
+# Assistant / LLM (optional)
+python-dotenv>=1.0.0
+openai>=1.0.0
+
+# Contracts (silver pipeline)
+pyyaml>=6.0
+
+# Optional: PyTorch for autoencoder embeddings
+# torch>=2.0.0
