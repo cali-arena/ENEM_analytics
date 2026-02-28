@@ -454,10 +454,12 @@ def tier_from_score(s: float, b_max: int, s_max: int) -> str:
 # Main
 # -----------------------------------------------------------------------------
 def main():
-    st.set_page_config(page_title="ENEM Radar — R2", layout="wide", initial_sidebar_state="collapsed")
+    try:
+        st.set_page_config(page_title="ENEM Radar — R2", layout="wide", initial_sidebar_state="collapsed")
+    except Exception:
+        pass
     inject_dark_theme_css()
     st.markdown('<p id="top"></p>', unsafe_allow_html=True)
-
     try:
         _main_body()
     except Exception as e:
@@ -915,4 +917,12 @@ def _main_body():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        st.set_page_config(page_title="ENEM Radar — Erro", layout="wide")
+        st.error("Erro ao iniciar o app.")
+        st.code(str(e), language="text")
+        with st.expander("Traceback completo"):
+            st.text(traceback.format_exc())
