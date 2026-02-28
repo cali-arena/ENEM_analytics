@@ -803,6 +803,14 @@ def main():
             params = {"limit": 10}
             try:
                 sql = build_intent_sql_r2(intent_id, params, uris)
+                # Proteção: Parquet no R2 não tem coluna ano — nunca usar ano no SQL
+                if " ano " in sql or "ano BETWEEN" in sql or "WHERE ano" in sql:
+                    if intent_id in INTENT_SQL_R2:
+                        sql = INTENT_SQL_R2[intent_id].format(
+                            kpis_uri=uris.get("gold_kpis", ""),
+                            profiles_uri=uris.get("gold_cluster_profiles", ""),
+                            limit="10",
+                        )
                 start = time.perf_counter()
                 df_intent = con.execute(sql).fetchdf()
                 duration = time.perf_counter() - start
