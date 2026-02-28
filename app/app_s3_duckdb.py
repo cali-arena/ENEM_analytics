@@ -381,7 +381,8 @@ def build_intent_sql_r2(intent_id: str, params: dict, uris: dict, year_col: str 
         if k in params:
             safe_base[k] = str(int(params[k]))
 
-    if year_col is None and intent_id in INTENT_FALLBACK_NO_YEAR:
+    # Sempre usar fallback para os intents de KPIs (evita "ano not found" no R2)
+    if intent_id in INTENT_FALLBACK_NO_YEAR:
         return INTENT_FALLBACK_NO_YEAR[intent_id].format(**safe_base)
 
     year_col = year_col or "ano"
