@@ -129,15 +129,16 @@ def _get_con():
 # Cached queries (TTL + max_entries; aggregated / LIMIT)
 # -----------------------------------------------------------------------------
 @st.cache_data(ttl=600, max_entries=50)
-def query_kpis(con_key: int, uri: str, year_min: int, year_max: int, uf: str | None) -> pd.DataFrame:
+def query_kpis(con_key: int, uri: str, year_min: int, year_max: int, uf: str | None, year_col: str = "ano") -> pd.DataFrame:
     con = _get_con()
     if con is None:
         return pd.DataFrame()
     try:
+        ycol = year_col if year_col.startswith('"') else year_col
         uf_filter = f" AND {_safe_col('sg_uf_residencia')} = '{str(uf).replace(chr(39), chr(39)+chr(39))}'" if uf and uf != "Todos" else ""
         q = f"""
         SELECT * FROM read_parquet('{uri}', hive_partitioning=0)
-        WHERE ano BETWEEN {year_min} AND {year_max}
+        WHERE {ycol} BETWEEN {year_min} AND {year_max}
           AND (sg_uf_residencia IS NULL OR TRIM(sg_uf_residencia) != '' AND sg_uf_residencia != 'NA')
         {uf_filter}
         """
@@ -331,23 +332,36 @@ def explain_chart(title: str, df: pd.DataFrame, filters: dict | None) -> str:
 # -----------------------------------------------------------------------------
 INTENT_CATALOG_R2 = [
     ("top_ufs_media_objetiva", "Top UFs média objetiva", ["year_start", "year_end", "limit"],
-     "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE ano BETWEEN {year_start} AND {year_end} AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}"),
+     "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE {year_col} BETWEEN {year_start} AND {year_end} AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}"),
     ("media_objetiva_por_ano", "Média objetiva por ano", ["year_start", "year_end"],
-     "SELECT ano, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE ano BETWEEN {year_start} AND {year_end} GROUP BY 1 ORDER BY 1"),
+     "SELECT {year_col} AS ano, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE {year_col} BETWEEN {year_start} AND {year_end} GROUP BY 1 ORDER BY 1"),
     ("media_redacao_por_ano", "Média redação por ano", ["year_start", "year_end"],
-     "SELECT ano, ROUND(AVG(media_redacao),2) AS media_redacao, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE ano BETWEEN {year_start} AND {year_end} GROUP BY 1 ORDER BY 1"),
+     "SELECT {year_col} AS ano, ROUND(AVG(media_redacao),2) AS media_redacao, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE {year_col} BETWEEN {year_start} AND {year_end} GROUP BY 1 ORDER BY 1"),
     ("pior_ano_media_objetiva", "Pior ano média objetiva", ["year_start", "year_end", "limit"],
-     "SELECT ano, ROUND(AVG(media_objetiva),2) AS media_objetiva FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE ano BETWEEN {year_start} AND {year_end} GROUP BY 1 ORDER BY 2 ASC LIMIT {limit}"),
+     "SELECT {year_col} AS ano, ROUND(AVG(media_objetiva),2) AS media_objetiva FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE {year_col} BETWEEN {year_start} AND {year_end} GROUP BY 1 ORDER BY 2 ASC LIMIT {limit}"),
     ("tamanho_clusters", "Tamanho dos clusters", ["limit"],
      "SELECT cluster_id, size FROM read_parquet('{profiles_uri}', hive_partitioning=0) ORDER BY size DESC LIMIT {limit}"),
 ]
 
 
-def build_intent_sql_r2(intent_id: str, params: dict, uris: dict) -> str:
+def _detect_kpis_year_column(con, kpis_uri: str) -> str:
+    """Return the year column name in kpis parquet (ano, year, etc.), quoted if needed. Default 'ano'."""
+    try:
+        df = con.execute(f"SELECT * FROM read_parquet('{kpis_uri}', hive_partitioning=0) LIMIT 1").fetchdf()
+        cols = [c for c in df.columns]
+        for cand in ["ano", "year", "Ano", "Year", "ANO", "year_id", "anio"]:
+            if cand in cols:
+                return cand if cand.replace("_", "").isalnum() and cand.islower() else f'"{cand}"'
+    except Exception:
+        pass
+    return "ano"
+
+
+def build_intent_sql_r2(intent_id: str, params: dict, uris: dict, year_col: str = "ano") -> str:
     for tid, _label, req, tmpl in INTENT_CATALOG_R2:
         if tid != intent_id:
             continue
-        safe = {"kpis_uri": uris.get("gold_kpis", ""), "profiles_uri": uris.get("gold_cluster_profiles", "")}
+        safe = {"kpis_uri": uris.get("gold_kpis", ""), "profiles_uri": uris.get("gold_cluster_profiles", ""), "year_col": year_col}
         for k in ["year_start", "year_end", "year", "ano"]:
             if k in params:
                 safe[k] = str(int(params[k]))
@@ -414,6 +428,10 @@ def main():
     has_cluster_profiles = _layer_available(con, uris["gold_cluster_profiles"])
     has_cluster_evolution = _layer_available(con, uris["gold_cluster_evolution"])
 
+    if "_kpis_year_col" not in st.session_state and has_kpis:
+        st.session_state["_kpis_year_col"] = _detect_kpis_year_column(con, uris["gold_kpis"])
+    kpis_year_col = st.session_state.get("_kpis_year_col", "ano")
+
     loaded = []
     if schema.get("silver_ok"):
         loaded.append("Silver")
@@ -429,6 +447,8 @@ def main():
         query_null_report.clear()
         query_cluster_profiles.clear()
         query_cluster_evolution.clear()
+        if "_kpis_year_col" in st.session_state:
+            del st.session_state["_kpis_year_col"]
         st.rerun()
 
     row1 = st.columns([3, 1])
@@ -469,7 +489,7 @@ def main():
 
     con_key = id(con)
     uf_param = uf_filter if uf_filter != "Todos" else None
-    df_kpis = query_kpis(con_key, uris["gold_kpis"], year_min, year_max, uf_param)
+    df_kpis = query_kpis(con_key, uris["gold_kpis"], year_min, year_max, uf_param, kpis_year_col)
 
     # Valores demonstrativos manuais quando não há dados no R2 (mais rápido)
     DEMO_KPIS = {"media_objetiva": 515.5, "media_redacao": 634.7, "pct_presence": 100.0, "total_participantes": 12_839_968}
@@ -732,7 +752,7 @@ def main():
         if st.button(label, key=f"intent_{intent_id}"):
             params = {"year_start": year_min, "year_end": year_max, "limit": 10}
             try:
-                sql = build_intent_sql_r2(intent_id, params, uris)
+                sql = build_intent_sql_r2(intent_id, params, uris, year_col=kpis_year_col)
                 start = time.perf_counter()
                 df_intent = con.execute(sql).fetchdf()
                 duration = time.perf_counter() - start
