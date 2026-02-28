@@ -551,7 +551,7 @@ def build_intent_sql(intent_id: str, params: dict) -> str:
         if n > default_limit:
             sql = re.sub(r"\\bLIMIT\\s+\\d+", f"LIMIT {default_limit}", sql, flags=re.IGNORECASE)
     else:
-        sql = sql.rstrip() + f"\\nLIMIT {default_limit}"
+        sql = sql.rstrip() + f"\nLIMIT {default_limit}"
 
     # Final validation
     if not validate_sql(sql):

@@ -129,19 +129,26 @@ def _get_con():
 # Cached queries (TTL + max_entries; aggregated / LIMIT)
 # -----------------------------------------------------------------------------
 @st.cache_data(ttl=600, max_entries=50)
-def query_kpis(con_key: int, uri: str, year_min: int, year_max: int, uf: str | None, year_col: str = "ano") -> pd.DataFrame:
+def query_kpis(con_key: int, uri: str, year_min: int, year_max: int, uf: str | None, year_col: str | None = "ano") -> pd.DataFrame:
     con = _get_con()
     if con is None:
         return pd.DataFrame()
     try:
-        ycol = year_col if year_col.startswith('"') else year_col
         uf_filter = f" AND {_safe_col('sg_uf_residencia')} = '{str(uf).replace(chr(39), chr(39)+chr(39))}'" if uf and uf != "Todos" else ""
-        q = f"""
-        SELECT * FROM read_parquet('{uri}', hive_partitioning=0)
-        WHERE {ycol} BETWEEN {year_min} AND {year_max}
-          AND (sg_uf_residencia IS NULL OR TRIM(sg_uf_residencia) != '' AND sg_uf_residencia != 'NA')
-        {uf_filter}
-        """
+        if year_col:
+            ycol = year_col if year_col.startswith('"') else year_col
+            q = f"""
+            SELECT * FROM read_parquet('{uri}', hive_partitioning=0)
+            WHERE {ycol} BETWEEN {year_min} AND {year_max}
+              AND (sg_uf_residencia IS NULL OR TRIM(sg_uf_residencia) != '' AND sg_uf_residencia != 'NA')
+            {uf_filter}
+            """
+        else:
+            q = f"""
+            SELECT * FROM read_parquet('{uri}', hive_partitioning=0)
+            WHERE (sg_uf_residencia IS NULL OR (TRIM(sg_uf_residencia) != '' AND sg_uf_residencia != 'NA'))
+            {uf_filter}
+            """
         return con.execute(q).fetchdf()
     except Exception:
         return pd.DataFrame()
@@ -343,9 +350,17 @@ INTENT_CATALOG_R2 = [
      "SELECT cluster_id, size FROM read_parquet('{profiles_uri}', hive_partitioning=0) ORDER BY size DESC LIMIT {limit}"),
 ]
 
+# Fallback SQL when kpis parquet has NO year column (only e.g. count_participantes, media_objetiva, sg_uf_residencia)
+INTENT_FALLBACK_NO_YEAR = {
+    "top_ufs_media_objetiva": "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}",
+    "media_objetiva_por_ano": "SELECT 1 AS ano, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
+    "media_redacao_por_ano": "SELECT 1 AS ano, ROUND(AVG(media_objetiva),2) AS media_redacao, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
+    "pior_ano_media_objetiva": "SELECT 1 AS ano, ROUND(AVG(media_objetiva),2) AS media_objetiva FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
+}
 
-def _detect_kpis_year_column(con, kpis_uri: str) -> str:
-    """Return the year column name in kpis parquet (ano, year, etc.), quoted if needed. Default 'ano'."""
+
+def _detect_kpis_year_column(con, kpis_uri: str) -> str | None:
+    """Return the year column name in kpis parquet (ano, year, etc.), quoted if needed; None if no year column."""
     try:
         df = con.execute(f"SELECT * FROM read_parquet('{kpis_uri}', hive_partitioning=0) LIMIT 1").fetchdf()
         cols = [c for c in df.columns]
@@ -354,19 +369,27 @@ def _detect_kpis_year_column(con, kpis_uri: str) -> str:
                 return cand if cand.replace("_", "").isalnum() and cand.islower() else f'"{cand}"'
     except Exception:
         pass
-    return "ano"
+    return None
 
 
-def build_intent_sql_r2(intent_id: str, params: dict, uris: dict, year_col: str = "ano") -> str:
+def build_intent_sql_r2(intent_id: str, params: dict, uris: dict, year_col: str | None = "ano") -> str:
+    kpis_uri = uris.get("gold_kpis", "")
+    profiles_uri = uris.get("gold_cluster_profiles", "")
+    limit = str(min(int(params.get("limit", 10)), 50))
+    safe_base = {"kpis_uri": kpis_uri, "profiles_uri": profiles_uri, "limit": limit}
+    for k in ["year_start", "year_end", "year", "ano"]:
+        if k in params:
+            safe_base[k] = str(int(params[k]))
+
+    if year_col is None and intent_id in INTENT_FALLBACK_NO_YEAR:
+        return INTENT_FALLBACK_NO_YEAR[intent_id].format(**safe_base)
+
+    year_col = year_col or "ano"
+    safe_base["year_col"] = year_col
     for tid, _label, req, tmpl in INTENT_CATALOG_R2:
         if tid != intent_id:
             continue
-        safe = {"kpis_uri": uris.get("gold_kpis", ""), "profiles_uri": uris.get("gold_cluster_profiles", ""), "year_col": year_col}
-        for k in ["year_start", "year_end", "year", "ano"]:
-            if k in params:
-                safe[k] = str(int(params[k]))
-        safe["limit"] = str(min(int(params.get("limit", 10)), 50))
-        return tmpl.format(**safe)
+        return tmpl.format(**safe_base)
     raise ValueError(f"Unknown intent: {intent_id}")
 
 
