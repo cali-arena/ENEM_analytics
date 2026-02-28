@@ -909,7 +909,15 @@ def _main_body():
                         st.session_state["llm_log"] = []
                     st.session_state["llm_log"].append({"question": question, "sql": sql, "rows": len(df_res)})
             except Exception as e:
-                st.error(f"Erro: {e}")
+                err = str(e).lower()
+                if "402" in str(e) or "insufficient balance" in err or "insufficient balance" in str(e):
+                    st.error("**Saldo insuficiente** na API do LLM (DeepSeek/OpenAI). Recarregue créditos na sua conta do provedor ou use outra chave. Para uso grátis: instale Ollama local e use `OLLAMA_BASE_URL`.")
+                elif "429" in str(e) or "rate limit" in err:
+                    st.error("**Limite de uso** da API atingido. Aguarde alguns minutos ou use outra chave/Ollama local.")
+                elif "401" in str(e) or "unauthorized" in err or "invalid" in err and "key" in err:
+                    st.error("**Chave da API inválida ou expirada.** Verifique OPENAI_API_KEY ou DEEPSEEK_API_KEY nos Secrets.")
+                else:
+                    st.error(f"Erro no LLM: {e}")
 
     section_divider()
     st.markdown('[↑ Voltar ao topo](#top)')
