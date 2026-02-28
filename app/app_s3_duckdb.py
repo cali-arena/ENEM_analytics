@@ -559,6 +559,10 @@ def main():
     con_key = id(con)
     uf_param = uf_filter if uf_filter != "Todos" else None
     df_kpis = query_kpis(con_key, uris["gold_kpis"], year_min, year_max, uf_param, kpis_year_col)
+    # Fix permanente: Parquet no R2 pode não ter coluna "ano" — garantir que existe para evitar KeyError em groupby
+    if not df_kpis.empty and "ano" not in df_kpis.columns:
+        df_kpis = df_kpis.copy()
+        df_kpis["ano"] = year_max
 
     # Valores demonstrativos manuais quando não há dados no R2 (mais rápido)
     DEMO_KPIS = {"media_objetiva": 515.5, "media_redacao": 634.7, "pct_presence": 100.0, "total_participantes": 12_839_968}
