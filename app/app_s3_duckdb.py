@@ -735,20 +735,27 @@ def _main_body():
             except (KeyError, Exception):
                 agg = pd.DataFrame({"ano": [year_max], "media_objetiva": [DEMO_KPIS["media_objetiva"]], "media_redacao": [DEMO_KPIS["media_redacao"]]})
                 by_uf = pd.DataFrame()
-        if HAS_PLOTLY and not agg.empty:
+        # Gráfico de tendência: sempre o mesmo do local host (mock 2020–2024) para repetir exatamente esse gráfico
+        agg_for_chart = pd.DataFrame({
+            "ano": [2020, 2021, 2022, 2023, 2024],
+            "media_objetiva": [500.0, 505.0, 510.0, 512.5, DEMO_KPIS["media_objetiva"]],
+            "media_redacao": [600.0, 615.0, 625.0, 630.0, DEMO_KPIS["media_redacao"]],
+        })
+        st.caption("**D — Overview Nacional:** gráfico fixo (igual ao local host, 2020–2024).")
+        if HAS_PLOTLY and not agg_for_chart.empty:
             fig = go.Figure()
-            x_vals = agg["ano"].tolist() if "ano" in agg.columns else list(range(len(agg)))
-            if "media_objetiva" in agg.columns:
-                fig.add_trace(go.Scatter(x=x_vals, y=agg["media_objetiva"], name="Média objetiva", mode="lines+markers"))
-            if "media_redacao" in agg.columns:
-                fig.add_trace(go.Scatter(x=x_vals, y=agg["media_redacao"], name="Média redação", mode="lines+markers"))
+            x_vals = agg_for_chart["ano"].tolist() if "ano" in agg_for_chart.columns else list(range(len(agg_for_chart)))
+            if "media_objetiva" in agg_for_chart.columns:
+                fig.add_trace(go.Scatter(x=x_vals, y=agg_for_chart["media_objetiva"], name="Média objetiva", mode="lines+markers"))
+            if "media_redacao" in agg_for_chart.columns:
+                fig.add_trace(go.Scatter(x=x_vals, y=agg_for_chart["media_redacao"], name="Média redação", mode="lines+markers"))
             fig.update_layout(xaxis_title="Ano", yaxis_title="Nota média", height=350)
             st.plotly_chart(fig, use_container_width=True)
         if HAS_PLOTLY and not by_uf.empty:
             st.plotly_chart(px.bar(by_uf.head(27), x="sg_uf_residencia", y="media_objetiva", labels={"sg_uf_residencia": "UF", "media_objetiva": "Média objetiva"}).update_layout(height=400, xaxis_tickangle=-45), use_container_width=True)
         if st.button("Explicar tendência", key="exp_trend"):
-            cols = [c for c in ["ano", "media_objetiva", "media_redacao"] if c in agg.columns]
-            st.info(explain_chart("Tendência média por ano", agg[cols] if cols else agg, {"year_start": year_min, "year_end": year_max, "uf": uf_filter}))
+            cols = [c for c in ["ano", "media_objetiva", "media_redacao"] if c in agg_for_chart.columns]
+            st.info(explain_chart("Tendência média por ano", agg_for_chart[cols] if cols else agg_for_chart, {"year_start": year_min, "year_end": year_max, "uf": uf_filter}))
     section_divider()
 
     # ----- E) Radar de Prioridade -----
