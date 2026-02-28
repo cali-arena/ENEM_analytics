@@ -335,63 +335,46 @@ def explain_chart(title: str, df: pd.DataFrame, filters: dict | None) -> str:
 
 
 # -----------------------------------------------------------------------------
-# Instant SQL Engine (R2: read_parquet only)
+# Instant SQL Engine (R2) — um SQL por intent, só colunas que existem na layer
+# gold/kpis_uf_ano: sg_uf_residencia, media_objetiva, count_participantes (sem ano)
+# gold/cluster_profiles: cluster_id, size
 # -----------------------------------------------------------------------------
-INTENT_CATALOG_R2 = [
-    ("top_ufs_media_objetiva", "Top UFs média objetiva", ["year_start", "year_end", "limit"],
-     "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE {year_col} BETWEEN {year_start} AND {year_end} AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}"),
-    ("media_objetiva_por_ano", "Média objetiva por ano", ["year_start", "year_end"],
-     "SELECT {year_col} AS ano, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE {year_col} BETWEEN {year_start} AND {year_end} GROUP BY 1 ORDER BY 1"),
-    ("media_redacao_por_ano", "Média redação por ano", ["year_start", "year_end"],
-     "SELECT {year_col} AS ano, ROUND(AVG(media_redacao),2) AS media_redacao, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE {year_col} BETWEEN {year_start} AND {year_end} GROUP BY 1 ORDER BY 1"),
-    ("pior_ano_media_objetiva", "Pior ano média objetiva", ["year_start", "year_end", "limit"],
-     "SELECT {year_col} AS ano, ROUND(AVG(media_objetiva),2) AS media_objetiva FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE {year_col} BETWEEN {year_start} AND {year_end} GROUP BY 1 ORDER BY 2 ASC LIMIT {limit}"),
-    ("tamanho_clusters", "Tamanho dos clusters", ["limit"],
-     "SELECT cluster_id, size FROM read_parquet('{profiles_uri}', hive_partitioning=0) ORDER BY size DESC LIMIT {limit}"),
+INTENT_SQL_R2 = {
+    "top_ufs_media_objetiva": "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}",
+    "media_objetiva_por_ano": "SELECT ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
+    "media_redacao_por_ano": "SELECT ROUND(AVG(media_objetiva),2) AS media_redacao, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
+    "pior_ano_media_objetiva": "SELECT ROUND(AVG(media_objetiva),2) AS media_objetiva FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
+    "tamanho_clusters": "SELECT cluster_id, size FROM read_parquet('{profiles_uri}', hive_partitioning=0) ORDER BY size DESC LIMIT {limit}",
+}
+INTENT_LABELS_R2 = [
+    ("top_ufs_media_objetiva", "Top UFs média objetiva"),
+    ("media_objetiva_por_ano", "Média objetiva por ano"),
+    ("media_redacao_por_ano", "Média redação por ano"),
+    ("pior_ano_media_objetiva", "Pior ano média objetiva"),
+    ("tamanho_clusters", "Tamanho dos clusters"),
 ]
 
-# Fallback SQL when kpis parquet has NO year column (only e.g. count_participantes, media_objetiva, sg_uf_residencia)
-INTENT_FALLBACK_NO_YEAR = {
-    "top_ufs_media_objetiva": "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}",
-    "media_objetiva_por_ano": "SELECT 1 AS ano, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
-    "media_redacao_por_ano": "SELECT 1 AS ano, ROUND(AVG(media_objetiva),2) AS media_redacao, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
-    "pior_ano_media_objetiva": "SELECT 1 AS ano, ROUND(AVG(media_objetiva),2) AS media_objetiva FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
-}
+
+def build_intent_sql_r2(intent_id: str, params: dict, uris: dict) -> str:
+    """Um SQL por intent, integrado às layers (sem coluna ano)."""
+    kpis_uri = uris.get("gold_kpis", "")
+    profiles_uri = uris.get("gold_cluster_profiles", "")
+    limit = str(min(int(params.get("limit", 10)), 50))
+    if intent_id not in INTENT_SQL_R2:
+        raise ValueError(f"Unknown intent: {intent_id}")
+    return INTENT_SQL_R2[intent_id].format(kpis_uri=kpis_uri, profiles_uri=profiles_uri, limit=limit)
 
 
 def _detect_kpis_year_column(con, kpis_uri: str) -> str | None:
-    """Return the year column name in kpis parquet (ano, year, etc.), quoted if needed; None if no year column."""
+    """Usado só por query_kpis/overview. Retorna nome da coluna de ano ou None."""
     try:
         df = con.execute(f"SELECT * FROM read_parquet('{kpis_uri}', hive_partitioning=0) LIMIT 1").fetchdf()
-        cols = [c for c in df.columns]
         for cand in ["ano", "year", "Ano", "Year", "ANO", "year_id", "anio"]:
-            if cand in cols:
+            if cand in df.columns:
                 return cand if cand.replace("_", "").isalnum() and cand.islower() else f'"{cand}"'
     except Exception:
         pass
     return None
-
-
-def build_intent_sql_r2(intent_id: str, params: dict, uris: dict, year_col: str | None = "ano") -> str:
-    kpis_uri = uris.get("gold_kpis", "")
-    profiles_uri = uris.get("gold_cluster_profiles", "")
-    limit = str(min(int(params.get("limit", 10)), 50))
-    safe_base = {"kpis_uri": kpis_uri, "profiles_uri": profiles_uri, "limit": limit}
-    for k in ["year_start", "year_end", "year", "ano"]:
-        if k in params:
-            safe_base[k] = str(int(params[k]))
-
-    # Sempre usar fallback para os intents de KPIs (evita "ano not found" no R2)
-    if intent_id in INTENT_FALLBACK_NO_YEAR:
-        return INTENT_FALLBACK_NO_YEAR[intent_id].format(**safe_base)
-
-    year_col = year_col or "ano"
-    safe_base["year_col"] = year_col
-    for tid, _label, req, tmpl in INTENT_CATALOG_R2:
-        if tid != intent_id:
-            continue
-        return tmpl.format(**safe_base)
-    raise ValueError(f"Unknown intent: {intent_id}")
 
 
 def tier_from_score(s: float, b_max: int, s_max: int) -> str:
@@ -771,12 +754,12 @@ def main():
 
     # ----- H) LLM Bot + Instant SQL -----
     section_header_anchor("H — LLM Analyst Bot (Grounded)", "sec-llm", level=2)
-    st.markdown("#### Instant SQL Engine — consultas rápidas")
-    for intent_id, label, req, _ in INTENT_CATALOG_R2:
+    st.markdown("#### Instant SQL Engine — consultas rápidas (layers R2)")
+    for intent_id, label in INTENT_LABELS_R2:
         if st.button(label, key=f"intent_{intent_id}"):
-            params = {"year_start": year_min, "year_end": year_max, "limit": 10}
+            params = {"limit": 10}
             try:
-                sql = build_intent_sql_r2(intent_id, params, uris, year_col=kpis_year_col)
+                sql = build_intent_sql_r2(intent_id, params, uris)
                 start = time.perf_counter()
                 df_intent = con.execute(sql).fetchdf()
                 duration = time.perf_counter() - start
@@ -786,21 +769,7 @@ def main():
                     st.session_state["llm_log"] = []
                 st.session_state["llm_log"].append({"intent": intent_id, "sql": sql, "rows": len(df_intent)})
             except Exception as e:
-                err_msg = str(e)
-                if intent_id in INTENT_FALLBACK_NO_YEAR and ("ano" in err_msg.lower() and "not found" in err_msg.lower() or "Referenced column" in err_msg):
-                    try:
-                        sql = INTENT_FALLBACK_NO_YEAR[intent_id].format(
-                            kpis_uri=uris.get("gold_kpis", ""),
-                            limit=str(min(10, 50)),
-                        )
-                        df_intent = con.execute(sql).fetchdf()
-                        st.code(sql, language="sql")
-                        st.dataframe(df_intent.head(15), use_container_width=True, hide_index=True)
-                        st.caption("Consulta executada sem filtro por ano (Parquet sem coluna ano).")
-                    except Exception as e2:
-                        st.error(str(e2))
-                else:
-                    st.error(err_msg)
+                st.error(str(e))
     st.markdown("---")
     question = st.text_input("Pergunta (LLM)", placeholder="Ex.: Quais UFs melhoraram mais?", key="llm_q")
     if st.button("Executar LLM") and question.strip():
