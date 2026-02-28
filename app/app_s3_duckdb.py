@@ -819,7 +819,14 @@ def _main_body():
             if not profiles.empty:
                 st.dataframe(profiles, use_container_width=True, hide_index=True)
                 if HAS_PLOTLY and "size" in profiles.columns:
-                    st.plotly_chart(px.pie(profiles, values="size", names="cluster_id", title="Distribuição por cluster"), use_container_width=True)
+                    fig_scatter = px.scatter(
+                        profiles, x="cluster_id", y="size",
+                        size="size", color="cluster_id",
+                        title="Distribuição por cluster (dispersão)",
+                        labels={"cluster_id": "Cluster", "size": "Tamanho"}
+                    )
+                    fig_scatter.update_layout(showlegend=True, height=400)
+                    st.plotly_chart(fig_scatter, use_container_width=True)
         if has_cluster_evolution:
             ev_df = query_cluster_evolution(con_key, uris["gold_cluster_evolution"], None)
             ufs_ev = ["Todos"] + (sorted(ev_df["uf"].dropna().unique().tolist()) if "uf" in ev_df.columns else [])
