@@ -559,16 +559,18 @@ def main():
     con_key = id(con)
     uf_param = uf_filter if uf_filter != "Todos" else None
     df_kpis = query_kpis(con_key, uris["gold_kpis"], year_min, year_max, uf_param, kpis_year_col)
-    # Fix permanente: garantir colunas ano e sg_uf_residencia para evitar KeyError em groupby/set_index
-    if not df_kpis.empty:
-        df_kpis = df_kpis.copy()
-        if "ano" not in df_kpis.columns:
-            df_kpis["ano"] = year_max
-        if "sg_uf_residencia" not in df_kpis.columns:
-            df_kpis["sg_uf_residencia"] = "BR"
-
-    # Valores demonstrativos manuais quando não há dados no R2 (mais rápido)
     DEMO_KPIS = {"media_objetiva": 515.5, "media_redacao": 634.7, "pct_presence": 100.0, "total_participantes": 12_839_968}
+    # Normalizar df_kpis: garantir ano e sg_uf_residencia para evitar KeyError. Se falhar, usar df vazio (modo demo).
+    try:
+        if not df_kpis.empty:
+            df_kpis = pd.DataFrame(df_kpis.copy())
+            cols = list(df_kpis.columns)
+            if "ano" not in cols:
+                df_kpis["ano"] = year_max
+            if "sg_uf_residencia" not in cols:
+                df_kpis["sg_uf_residencia"] = "BR"
+    except Exception:
+        df_kpis = pd.DataFrame()
     use_demo = df_kpis.empty
 
     # ----- A) Visão geral -----
@@ -576,14 +578,22 @@ def main():
     presence_warning = False
     try:
         if not df_kpis.empty:
+            cols_list = list(df_kpis.columns)
             agg_cols = {"media_objetiva": "mean", "media_redacao": "mean", "count_participantes": "sum"}
-            if "pct_presence_full" in df_kpis.columns:
+            if "pct_presence_full" in cols_list:
                 agg_cols["pct_presence_full"] = "mean"
-            cols_agg = {k: v for k, v in agg_cols.items() if k in df_kpis.columns}
-            if "ano" in df_kpis.columns and cols_agg:
-                agg = df_kpis.groupby("ano").agg(cols_agg).reset_index()
+            cols_agg = {k: v for k, v in agg_cols.items() if k in cols_list}
+            if not cols_agg:
+                agg = pd.DataFrame()
+            elif "ano" in cols_list:
+                try:
+                    agg = df_kpis.groupby("ano").agg(cols_agg).reset_index()
+                except KeyError:
+                    agg = df_kpis.agg({k: v for k, v in cols_agg.items()}).to_frame().T
+                    agg["ano"] = year_max
             else:
-                agg = df_kpis.agg({k: v for k, v in cols_agg.items()}).to_frame().T if cols_agg else pd.DataFrame()
+                agg = df_kpis.agg({k: v for k, v in cols_agg.items()}).to_frame().T
+                agg["ano"] = year_max
             if not agg.empty:
                 if "pct_presence_full" in agg.columns:
                     agg = agg.rename(columns={"pct_presence_full": "pct_presence"})
