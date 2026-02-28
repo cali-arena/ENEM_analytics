@@ -735,13 +735,13 @@ def _main_body():
             except (KeyError, Exception):
                 agg = pd.DataFrame({"ano": [year_max], "media_objetiva": [DEMO_KPIS["media_objetiva"]], "media_redacao": [DEMO_KPIS["media_redacao"]]})
                 by_uf = pd.DataFrame()
-        # Gráfico de tendência: sempre o mesmo do local host (mock 2020–2024) para repetir exatamente esse gráfico
+        # Gráfico de tendência: sempre igual ao local host (mock 2020–2024) para ver o crescimento da linha da média
         agg_for_chart = pd.DataFrame({
             "ano": [2020, 2021, 2022, 2023, 2024],
-            "media_objetiva": [500.0, 505.0, 510.0, 512.5, DEMO_KPIS["media_objetiva"]],
-            "media_redacao": [600.0, 615.0, 625.0, 630.0, DEMO_KPIS["media_redacao"]],
+            "media_objetiva": [565.0, 610.0, 615.0, 615.0, 625.0],
+            "media_redacao": [505.0, 505.0, 515.0, 515.0, 520.0],
         })
-        st.caption("**D — Overview Nacional:** gráfico fixo (igual ao local host, 2020–2024).")
+        st.caption("**D — Overview Nacional:** gráfico fixo (igual ao local host — crescimento da média 2020–2024).")
         if HAS_PLOTLY and not agg_for_chart.empty:
             fig = go.Figure()
             x_vals = agg_for_chart["ano"].tolist() if "ano" in agg_for_chart.columns else list(range(len(agg_for_chart)))
@@ -749,7 +749,11 @@ def _main_body():
                 fig.add_trace(go.Scatter(x=x_vals, y=agg_for_chart["media_objetiva"], name="Média objetiva", mode="lines+markers"))
             if "media_redacao" in agg_for_chart.columns:
                 fig.add_trace(go.Scatter(x=x_vals, y=agg_for_chart["media_redacao"], name="Média redação", mode="lines+markers"))
-            fig.update_layout(xaxis_title="Ano", yaxis_title="Nota média", height=350)
+            fig.update_layout(
+                xaxis_title="Ano", yaxis_title="Nota média", height=350,
+                xaxis=dict(dtick=1, range=[2019.5, 2024.5]),
+                yaxis=dict(range=[500, 640]),
+            )
             st.plotly_chart(fig, use_container_width=True)
         if HAS_PLOTLY and not by_uf.empty:
             st.plotly_chart(px.bar(by_uf.head(27), x="sg_uf_residencia", y="media_objetiva", labels={"sg_uf_residencia": "UF", "media_objetiva": "Média objetiva"}).update_layout(height=400, xaxis_tickangle=-45), use_container_width=True)
