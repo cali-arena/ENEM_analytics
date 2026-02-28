@@ -453,7 +453,7 @@ def main():
 
     if "_kpis_year_col" not in st.session_state and has_kpis:
         st.session_state["_kpis_year_col"] = _detect_kpis_year_column(con, uris["gold_kpis"])
-    kpis_year_col = st.session_state.get("_kpis_year_col", "ano")
+    kpis_year_col = st.session_state.get("_kpis_year_col")  # None = use fallback SQL (no year column)
 
     loaded = []
     if schema.get("silver_ok"):
