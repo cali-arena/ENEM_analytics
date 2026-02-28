@@ -458,6 +458,18 @@ def main():
     inject_dark_theme_css()
     st.markdown('<p id="top"></p>', unsafe_allow_html=True)
 
+    try:
+        _main_body()
+    except Exception as e:
+        st.error("Erro ao carregar o app. Abra **Manage app → Logs** no Streamlit Cloud para ver o traceback completo.")
+        st.code(str(e), language="text")
+        with st.expander("Detalhes (traceback)"):
+            import traceback
+            st.text(traceback.format_exc())
+        st.caption("Dica: KeyError com 'ano' ou colunas? O Parquet no R2 pode ter schema diferente. Rode `python scripts/build_and_upload_demo_r2.py` para subir dados de demo.")
+
+
+def _main_body():
     secrets = _safe_secrets_dict()
     config = get_r2_config(secrets)
     if not config["access_key"] or not config["secret_key"]:
