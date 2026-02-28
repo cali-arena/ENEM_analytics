@@ -248,12 +248,21 @@ def build_story_report_r2(
         agg_cols = {"media_objetiva": "mean", "media_redacao": "mean", "count_participantes": "sum"}
         if "pct_presence_full" in df_k.columns:
             agg_cols["pct_presence_full"] = "mean"
-        agg_year = df_k.groupby("ano").agg(agg_cols).reset_index()
-        pct_col = "pct_presence_full" if "pct_presence_full" in agg_year.columns else None
-        if pct_col:
-            agg_year = agg_year.rename(columns={"pct_presence_full": "pct_presence"})
+        cols_agg = {k: v for k, v in agg_cols.items() if k in df_k.columns}
+        if "ano" in df_k.columns and cols_agg:
+            agg_year = df_k.groupby("ano").agg(cols_agg).reset_index()
         else:
-            agg_year["pct_presence"] = 100.0
+            agg_year = df_k.agg({k: v for k, v in cols_agg.items()}).to_frame().T if cols_agg else pd.DataFrame()
+            if not agg_year.empty:
+                agg_year["ano"] = year_end
+        if agg_year.empty:
+            agg_year = pd.DataFrame({"ano": [year_end], "media_objetiva": [0.0], "media_redacao": [0.0], "pct_presence": [100.0]})
+        else:
+            pct_col = "pct_presence_full" if "pct_presence_full" in agg_year.columns else None
+            if pct_col:
+                agg_year = agg_year.rename(columns={"pct_presence_full": "pct_presence"})
+            elif "pct_presence" not in agg_year.columns:
+                agg_year["pct_presence"] = 100.0
         last_row = agg_year.sort_values("ano").iloc[-1]
         context_pack["kpis"] = {
             "year_last": int(last_row["ano"]),
@@ -562,15 +571,22 @@ def main():
         agg_cols = {"media_objetiva": "mean", "media_redacao": "mean", "count_participantes": "sum"}
         if "pct_presence_full" in df_kpis.columns:
             agg_cols["pct_presence_full"] = "mean"
-        agg = df_kpis.groupby("ano").agg(agg_cols).reset_index()
-        if "pct_presence_full" in agg.columns:
-            agg = agg.rename(columns={"pct_presence_full": "pct_presence"})
+        cols_agg = {k: v for k, v in agg_cols.items() if k in df_kpis.columns}
+        if "ano" in df_kpis.columns and cols_agg:
+            agg = df_kpis.groupby("ano").agg(cols_agg).reset_index()
         else:
-            agg["pct_presence"] = 100.0
-            presence_warning = True
-        kpi_media_obj = f"{agg['media_objetiva'].iloc[-1]:.1f}" if len(agg) else "—"
-        kpi_media_red = f"{agg['media_redacao'].iloc[-1]:.1f}" if len(agg) else "—"
-        kpi_pres = f"{agg['pct_presence'].iloc[-1]:.1f}%" if len(agg) else "—"
+            agg = df_kpis.agg({k: v for k, v in cols_agg.items()}).to_frame().T if cols_agg else pd.DataFrame()
+        if not agg.empty:
+            if "pct_presence_full" in agg.columns:
+                agg = agg.rename(columns={"pct_presence_full": "pct_presence"})
+            elif "pct_presence" not in agg.columns:
+                agg["pct_presence"] = 100.0
+                presence_warning = True
+            kpi_media_obj = f"{agg['media_objetiva'].iloc[-1]:.1f}" if "media_objetiva" in agg.columns else "—"
+            kpi_media_red = f"{agg['media_redacao'].iloc[-1]:.1f}" if "media_redacao" in agg.columns else "—"
+            kpi_pres = f"{agg['pct_presence'].iloc[-1]:.1f}%" if "pct_presence" in agg.columns else "—"
+        else:
+            kpi_media_obj = kpi_media_red = kpi_pres = "—"
         kpi_total = f"{int(df_kpis['count_participantes'].sum()):,}" if "count_participantes" in df_kpis.columns else "—"
     else:
         kpi_media_obj = f"{DEMO_KPIS['media_objetiva']}"
@@ -662,16 +678,28 @@ def main():
             agg_cols = {"media_objetiva": "mean", "media_redacao": "mean", "count_participantes": "sum"}
             if "pct_presence_full" in df_kpis.columns:
                 agg_cols["pct_presence_full"] = "mean"
-            agg = df_kpis.groupby("ano").agg(agg_cols).reset_index()
-            if "pct_presence_full" in agg.columns:
+            cols_agg = {k: v for k, v in agg_cols.items() if k in df_kpis.columns}
+            if "ano" in df_kpis.columns and cols_agg:
+                agg = df_kpis.groupby("ano").agg(cols_agg).reset_index()
+            else:
+                agg = df_kpis.agg({k: v for k, v in cols_agg.items()}).to_frame().T if cols_agg else pd.DataFrame()
+                if not agg.empty and "ano" not in agg.columns:
+                    agg["ano"] = year_max
+            if not agg.empty and "pct_presence_full" in agg.columns:
                 agg = agg.rename(columns={"pct_presence_full": "pct_presence"})
-            by_uf = df_kpis.groupby("sg_uf_residencia").agg(media_objetiva=("media_objetiva", "mean"), count=("count_participantes", "sum")).reset_index()
-            by_uf = by_uf[by_uf["sg_uf_residencia"].notna() & (by_uf["sg_uf_residencia"].astype(str).str.strip() != "") & (by_uf["sg_uf_residencia"].astype(str) != "NA")]
-            by_uf = by_uf.sort_values("media_objetiva", ascending=False)
-        if HAS_PLOTLY:
+            if "sg_uf_residencia" in df_kpis.columns:
+                by_uf = df_kpis.groupby("sg_uf_residencia").agg(media_objetiva=("media_objetiva", "mean"), count=("count_participantes", "sum")).reset_index()
+                by_uf = by_uf[by_uf["sg_uf_residencia"].notna() & (by_uf["sg_uf_residencia"].astype(str).str.strip() != "") & (by_uf["sg_uf_residencia"].astype(str) != "NA")]
+                by_uf = by_uf.sort_values("media_objetiva", ascending=False)
+            else:
+                by_uf = pd.DataFrame()
+        if HAS_PLOTLY and not agg.empty:
             fig = go.Figure()
-            fig.add_trace(go.Scatter(x=agg["ano"], y=agg["media_objetiva"], name="Média objetiva", mode="lines+markers"))
-            fig.add_trace(go.Scatter(x=agg["ano"], y=agg["media_redacao"], name="Média redação", mode="lines+markers"))
+            x_vals = agg["ano"].tolist() if "ano" in agg.columns else list(range(len(agg)))
+            if "media_objetiva" in agg.columns:
+                fig.add_trace(go.Scatter(x=x_vals, y=agg["media_objetiva"], name="Média objetiva", mode="lines+markers"))
+            if "media_redacao" in agg.columns:
+                fig.add_trace(go.Scatter(x=x_vals, y=agg["media_redacao"], name="Média redação", mode="lines+markers"))
             fig.update_layout(xaxis_title="Ano", yaxis_title="Nota média", height=350)
             st.plotly_chart(fig, use_container_width=True)
         if HAS_PLOTLY and not by_uf.empty:
@@ -776,7 +804,7 @@ def main():
         silver_max = st.number_input("Silver (máx. score)", 0, 100, 69, key="silver")
     with col_t3:
         st.caption("Gold: score > Silver máx.")
-    if has_kpis and not df_kpis.empty:
+    if has_kpis and not df_kpis.empty and "ano" in df_kpis.columns:
         df_t = df_kpis.copy()
         df_t["ano"] = df_t["ano"].astype(int)
         anos_t = sorted(df_t["ano"].unique())
