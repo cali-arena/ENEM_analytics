@@ -929,18 +929,31 @@ st.caption(
     "e mostramos o resultado imediatamente."
 )
 
-main_intents_order = [
-    "top_ufs_media_objetiva",
-    "ufs_melhoraram_matematica",
-    "media_redacao_por_ano",
-    "media_objetiva_por_ano",
-    "presenca_por_ano",
-    "top_ufs_redacao_800",
-    "pior_ano_media_objetiva",
-    "gap_renda_media_objetiva",
-    "tamanho_clusters",
-    "cluster_crescimento_por_uf",
-]
+# Só exibir intents que têm tabelas carregadas (evita erros e botões que não funcionam)
+has_fato = table_exists(con, "gold.fato_desempenho")
+main_intents_order = []
+if has_kpis:
+    main_intents_order.extend([
+        "top_ufs_media_objetiva",
+        "media_redacao_por_ano",
+        "media_objetiva_por_ano",
+        "presenca_por_ano",
+        "pior_ano_media_objetiva",
+    ])
+    if has_fato:
+        main_intents_order.append("ufs_melhoraram_matematica")
+    # top_ufs_redacao_800 exige coluna pct_top800_redacao; incluir só se existir
+    try:
+        _ = con.execute("SELECT pct_top800_redacao FROM gold.kpis_uf_ano LIMIT 1").fetchdf()
+        main_intents_order.append("top_ufs_redacao_800")
+    except Exception:
+        pass
+    if has_fato:
+        main_intents_order.append("gap_renda_media_objetiva")
+if has_cluster_profiles:
+    main_intents_order.append("tamanho_clusters")
+if has_cluster_evolution:
+    main_intents_order.append("cluster_crescimento_por_uf")
 
 intent_labels = {
     "top_ufs_media_objetiva": "Top UFs média objetiva",

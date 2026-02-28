@@ -39,13 +39,13 @@ def build_demo_parquets():
     (OUT_DIR / "gold").mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "silver").mkdir(parents=True, exist_ok=True)
 
-    # ---- gold/kpis_uf_ano ----
+    # ---- gold/kpis_uf_ano (2020-2024, 27 UFs — igual ao host para tendências e Radar) ----
     rows = []
     for ano in ANOS:
         for i, uf in enumerate(UFS):
-            # Variação leve por ano/UF para gráficos não ficarem planos
-            base_obj = 520.0 + (ano - 2020) * 8 + (i % 5) * 6
-            base_red = 480.0 + (ano - 2020) * 6 + (i % 4) * 8
+            # Tendência por ano (crescimento da média) + variação por UF
+            base_obj = 500.0 + (ano - 2020) * 5 + (i % 5) * 6
+            base_red = 565.0 + (ano - 2020) * 8 + (i % 4) * 5
             count = 50000 + (ano * 1000) + (i * 200)
             presenca = 92.0 + (i % 6) + (ano - 2020) * 0.5
             rows.append({
@@ -69,22 +69,23 @@ def build_demo_parquets():
     df_kpis.to_parquet(kpis_dir / "part-0.parquet", index=False)
     print(f"  gold/kpis_uf_ano: {len(df_kpis)} linhas")
 
-    # ---- gold/cluster_profiles.parquet ----
+    # ---- gold/cluster_profiles.parquet (app usa size, cluster_id; media_objetiva para tabela) ----
     profiles = pd.DataFrame({
         "cluster_id": [0, 1, 2, 3, 4, 5, 6],
         "size": [92433, 26969, 55545, 42000, 38000, 31000, 25000],
         "media_redacao": [477.43, 759.99, 802.74, 650.0, 720.0, 680.0, 580.0],
         "media_obj": [431.31, 600.83, 612.52, 560.0, 590.0, 550.0, 500.0],
+        "media_objetiva": [431.31, 600.83, 612.52, 560.0, 590.0, 550.0, 500.0],  # alias para exibição
         "presence_rate": [0.85, 0.98, 0.99, 0.95, 0.97, 0.94, 0.90],
         "top_3_ufs": ["BA PA SP", "MG RJ SP", "BA MG SP", "PR SC RS", "SP MG RJ", "CE PE BA", "MA PI CE"],
     })
     profiles.to_parquet(OUT_DIR / "gold" / "cluster_profiles.parquet", index=False)
     print("  gold/cluster_profiles.parquet")
 
-    # ---- gold/cluster_evolution_uf_ano.parquet ----
+    # ---- gold/cluster_evolution_uf_ano.parquet (todas as UFs para "Evolução por UF" igual ao host) ----
     ev_rows = []
     for ano in ANOS:
-        for uf in UFS[:15]:  # subset para não ficar gigante
+        for uf in UFS:
             for cid in range(7):
                 pct = 0.12 + (cid * 0.08) + ((ano - 2020) * 0.01) + (hash(uf) % 5) / 100.0
                 ev_rows.append({"ano": ano, "uf": uf, "cluster_id": cid, "pct_participants": round(pct, 4)})

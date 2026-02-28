@@ -181,6 +181,8 @@ python scripts/build_and_upload_demo_r2.py
 
 O script gera Parquets mínimos (kpis_uf_ano, cluster_profiles, cluster_evolution_uf_ano, quality_report, null_report) e envia para o R2. Credenciais: `.streamlit/secrets.toml` ou variáveis `R2_ACCESS_KEY`, `R2_SECRET_KEY`, `R2_ENDPOINT`, `R2_BUCKET`. Depois, no app, clique em **Refresh cache** e recarregue a página.
 
+**Para deixar o app no S3 igual ao host (passo a passo completo):** [docs/PASSO_A_PASSO_S3_IGUAL_HOST.md](docs/PASSO_A_PASSO_S3_IGUAL_HOST.md).
+
 ### Troubleshooting (R2 + DuckDB)
 
 | Issue | What to check |

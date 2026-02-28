@@ -583,7 +583,7 @@ def _main_body():
     st.markdown("---")
 
     anos_disponiveis = [2020, 2021, 2022, 2023, 2024]
-    col_y1, col_y2, col_uf = st.columns([2, 2, 2])
+    col_y1, col_y2, col_uf, col_method = st.columns([2, 2, 2, 1])
     with col_y1:
         year_min = st.slider("Ano mín.", min_value=min(anos_disponiveis), max_value=max(anos_disponiveis), value=2020, key="ymin")
     with col_y2:
@@ -600,6 +600,8 @@ def _main_body():
             pass
     with col_uf:
         uf_filter = st.selectbox("UF", ufs_list, key="uf_global")
+    with col_method:
+        show_methodology = st.checkbox("Mostrar método (CRISP-DM)", value=True, key="show_method")
     st.markdown("---")
 
     con_key = id(con)
@@ -686,19 +688,20 @@ def _main_body():
         st.download_button("Baixar Markdown", data=report_md, file_name="auto_report.md", mime="text/markdown", key="dl_story")
     section_divider()
 
-    # ----- B) CRISP-DM -----
-    section_header_anchor("B — CRISP-DM + Lakehouse (método em 60s)", "sec-method", level=2)
-    steps = ["Business Understanding", "Data Understanding", "Data Prep (Silver)", "Modeling (Gold)", "Evaluation", "Deployment"]
-    st.markdown("**Fluxo:** " + " → ".join(steps))
-    st.markdown("*\"Bronze guarda a verdade. Silver organiza. Gold transforma em decisão.\"*")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("**Bronze**"); st.caption("Ingestão raw, Parquet por ano.")
-    with c2:
-        st.markdown("**Silver**"); st.caption("Contrato, validação, quality_report, null_report.")
-    with c3:
-        st.markdown("**Gold**"); st.caption("KPIs, kpis_uf_ano, cluster_*.")
-    section_divider()
+    # ----- B) CRISP-DM ----- (igual app_one_page: toggle Mostrar método)
+    if show_methodology:
+        section_header_anchor("B — CRISP-DM + Lakehouse (método em 60s)", "sec-method", level=2)
+        steps = ["Business Understanding", "Data Understanding", "Data Prep (Silver)", "Modeling (Gold)", "Evaluation", "Deployment"]
+        st.markdown("**Fluxo:** " + " → ".join(steps))
+        st.markdown("*\"Bronze guarda a verdade. Silver organiza. Gold transforma em decisão.\"*")
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("**Bronze**"); st.caption("Ingestão raw, Parquet por ano.")
+        with c2:
+            st.markdown("**Silver**"); st.caption("Contrato, validação, quality_report, null_report.")
+        with c3:
+            st.markdown("**Gold**"); st.caption("KPIs, kpis_uf_ano, cluster_*.")
+        section_divider()
 
     # ----- C) Qualidade Silver -----
     section_header_anchor("C — Qualidade dos dados (Silver)", "sec-quality", level=2)
@@ -916,41 +919,85 @@ def _main_body():
     with c3: tier_card_dark("Gold", "Gold", ["Gold completo.", "LLM Analyst.", "Mapa de Perfis."])
     section_divider()
 
-    # ----- H) LLM Bot + Instant SQL -----
+    # ----- H) LLM Bot + Instant SQL (igual app_one_page: mesmos intents + demo questions) -----
     section_header_anchor("H — LLM Analyst Bot (Grounded)", "sec-llm", level=2)
-    st.markdown("**Para apresentar agora (grátis, sem API):** clique em uma consulta pronta.")
+    st.caption("O bot consulta apenas tabelas Gold (e Silver). Resposta ancorada no resultado da query.")
+    st.markdown("#### Instant SQL Engine — consultas rápidas (Layer 0)")
+    st.caption("Escolha um atalho de consulta; geramos o SQL de forma segura sobre as tabelas Gold/Silver e mostramos o resultado imediatamente.")
     kpis_uri = uris.get("gold_kpis", "")
     profiles_uri = uris.get("gold_cluster_profiles", "")
-    if kpis_uri:
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            if st.button("Top 10 UFs por média objetiva", key="demo_top_ufs"):
-                sql_d = f"SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
-                try:
-                    df_d = con.execute(sql_d).fetchdf()
-                    st.session_state["_demo_sql"], st.session_state["_demo_df"] = sql_d, df_d
-                except Exception as ex:
-                    st.error(str(ex))
-        with c2:
-            if st.button("Total participantes por UF", key="demo_total_uf"):
-                sql_d = f"SELECT sg_uf_residencia AS uf, SUM(count_participantes) AS total FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
-                try:
-                    df_d = con.execute(sql_d).fetchdf()
-                    st.session_state["_demo_sql"], st.session_state["_demo_df"] = sql_d, df_d
-                except Exception as ex:
-                    st.error(str(ex))
-        with c3:
-            if st.button("Média objetiva geral", key="demo_media_geral"):
-                sql_d = f"SELECT ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS total_participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)"
-                try:
-                    df_d = con.execute(sql_d).fetchdf()
-                    st.session_state["_demo_sql"], st.session_state["_demo_df"] = sql_d, df_d
-                except Exception as ex:
-                    st.error(str(ex))
-        if "_demo_sql" in st.session_state:
-            st.code(st.session_state["_demo_sql"], language="sql")
-            st.dataframe(st.session_state["_demo_df"].head(15), use_container_width=True, hide_index=True)
+    evolution_uri = uris.get("gold_cluster_evolution", "")
+
+    main_intents_order = [
+        "top_ufs_media_objetiva",
+        "ufs_melhoraram_matematica",
+        "media_redacao_por_ano",
+        "media_objetiva_por_ano",
+        "presenca_por_ano",
+        "top_ufs_redacao_800",
+        "pior_ano_media_objetiva",
+        "gap_renda_media_objetiva",
+        "tamanho_clusters",
+        "cluster_crescimento_por_uf",
+    ]
+    intent_labels = {
+        "top_ufs_media_objetiva": "Top UFs média objetiva",
+        "ufs_melhoraram_matematica": "UFs que mais melhoraram em matemática",
+        "media_redacao_por_ano": "Média redação por ano",
+        "media_objetiva_por_ano": "Média objetiva por ano",
+        "presenca_por_ano": "Presença plena por ano",
+        "top_ufs_redacao_800": "Top UFs redação ≥ 800",
+        "pior_ano_media_objetiva": "Pior ano média objetiva",
+        "gap_renda_media_objetiva": "Gap renda × média objetiva",
+        "tamanho_clusters": "Tamanho dos clusters",
+        "cluster_crescimento_por_uf": "Crescimento cluster por UF",
+    }
+
+    def _r2_sql_for_intent(iid):
+        if iid == "top_ufs_media_objetiva" and kpis_uri:
+            return f"SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+        if iid == "media_objetiva_por_ano" and kpis_uri:
+            return f"SELECT ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS total FROM read_parquet('{kpis_uri}', hive_partitioning=0)"
+        if iid == "media_redacao_por_ano" and kpis_uri:
+            return f"SELECT ROUND(AVG(media_redacao),2) AS media_redacao, SUM(count_participantes) AS total FROM read_parquet('{kpis_uri}', hive_partitioning=0)"
+        if iid == "tamanho_clusters" and profiles_uri:
+            return f"SELECT cluster_id, size FROM read_parquet('{profiles_uri}', hive_partitioning=0) ORDER BY size DESC LIMIT 20"
+        if iid == "cluster_crescimento_por_uf" and evolution_uri:
+            return f"SELECT uf, cluster_id, pct_participants FROM read_parquet('{evolution_uri}', hive_partitioning=0) LIMIT 20"
+        return None
+
+    chosen_intent_id = None
+    cols_intents = st.columns(5)
+    for idx, intent_id in enumerate(main_intents_order):
+        col = cols_intents[idx % len(cols_intents)]
+        label = intent_labels.get(intent_id, intent_id)
+        with col:
+            if st.button(label, key=f"intent_{intent_id}"):
+                chosen_intent_id = intent_id
+
+    if chosen_intent_id:
+        sql_r2 = _r2_sql_for_intent(chosen_intent_id)
+        if sql_r2:
+            try:
+                df_inst = con.execute(sql_r2).fetchdf()
+                st.caption("SQL instantâneo (camada 0):")
+                st.code(sql_r2, language="sql")
+                st.dataframe(df_inst.head(15), use_container_width=True, hide_index=True)
+            except Exception as ex:
+                st.error(f"Erro ao executar intent '{chosen_intent_id}': {ex}")
+        else:
+            st.info("Esta consulta requer tabelas/colunas não disponíveis no R2 (ex.: ano, fato_desempenho). Use app_one_page com dados locais.")
+
     st.markdown("---")
+    demo_questions = [
+        "Quais UFs melhoraram mais em matemática de 2021 a 2024?",
+        "Qual a média de redação por ano no Brasil?",
+        "Top 5 UFs com maior média objetiva em 2024?",
+    ]
+    for i, q in enumerate(demo_questions):
+        if st.button(f"Demo: {q[:50]}…", key=f"demo_q_{i}"):
+            st.session_state["llm_q"] = q
+            st.rerun()
     st.markdown("**Pergunta (LLM)** — usa API (DeepSeek/OpenAI/Ollama); se der 402, use os botões acima.")
     question = st.text_input("Pergunta (LLM)", placeholder="Ex.: Quais UFs têm maior média objetiva?", key="llm_q")
     if st.button("Executar LLM") and question.strip():

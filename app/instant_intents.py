@@ -544,14 +544,21 @@ def build_intent_sql(intent_id: str, params: dict) -> str:
         if r.lower() not in allowed_lc:
             raise ValueError(f"Table '{r}' is not in the allowlist for Instant SQL.")
 
-    # Enforce LIMIT <= default_limit
-    m = re.search(r"\\bLIMIT\\s+(\\d+)", sql, flags=re.IGNORECASE)
-    if m:
-        n = int(m.group(1))
-        if n > default_limit:
-            sql = re.sub(r"\\bLIMIT\\s+\\d+", f"LIMIT {default_limit}", sql, flags=re.IGNORECASE)
-    else:
+    # Enforce LIMIT <= default_limit (só adiciona LIMIT se ainda não existir — evita duplicado)
+    if "LIMIT" not in sql.upper():
         sql = sql.rstrip() + f"\nLIMIT {default_limit}"
+    else:
+        m = re.search(r"\bLIMIT\s+(\d+)", sql, flags=re.IGNORECASE)
+        if m:
+            n = int(m.group(1))
+            if n > default_limit:
+                sql = re.sub(r"\bLIMIT\s+\d+", f"LIMIT {default_limit}", sql, flags=re.IGNORECASE, count=1)
+
+    # Garantir um único LIMIT (evita "LINE N: LIMIT 10\nLIMIT 10" por qualquer duplicação)
+    limit_matches = list(re.finditer(r"\bLIMIT\s+(\d+)", sql, flags=re.IGNORECASE))
+    if len(limit_matches) > 1:
+        first = limit_matches[0]
+        sql = sql[: first.end()].rstrip()
 
     # Final validation
     if not validate_sql(sql):
