@@ -559,10 +559,13 @@ def main():
     con_key = id(con)
     uf_param = uf_filter if uf_filter != "Todos" else None
     df_kpis = query_kpis(con_key, uris["gold_kpis"], year_min, year_max, uf_param, kpis_year_col)
-    # Fix permanente: Parquet no R2 pode não ter coluna "ano" — garantir que existe para evitar KeyError em groupby
-    if not df_kpis.empty and "ano" not in df_kpis.columns:
+    # Fix permanente: garantir colunas ano e sg_uf_residencia para evitar KeyError em groupby/set_index
+    if not df_kpis.empty:
         df_kpis = df_kpis.copy()
-        df_kpis["ano"] = year_max
+        if "ano" not in df_kpis.columns:
+            df_kpis["ano"] = year_max
+        if "sg_uf_residencia" not in df_kpis.columns:
+            df_kpis["sg_uf_residencia"] = "BR"
 
     # Valores demonstrativos manuais quando não há dados no R2 (mais rápido)
     DEMO_KPIS = {"media_objetiva": 515.5, "media_redacao": 634.7, "pct_presence": 100.0, "total_participantes": 12_839_968}
@@ -742,10 +745,12 @@ def main():
         if not df_kpis.empty:
             df_r = df_kpis.copy()
             if "ano" not in df_r.columns:
-                df_r["ano"] = df_r.get("ano", 0)
+                df_r["ano"] = year_max
+            if "sg_uf_residencia" not in df_r.columns:
+                df_r["sg_uf_residencia"] = "BR"
             df_r["ano"] = df_r["ano"].astype(int)
             anos_r = sorted(df_r["ano"].unique())
-            if len(anos_r) >= 2:
+            if len(anos_r) >= 2 and "sg_uf_residencia" in df_r.columns:
                 first_year, last_year = min(anos_r), max(anos_r)
                 early = df_r[df_r["ano"] == first_year].set_index("sg_uf_residencia")
                 late = df_r[df_r["ano"] == last_year].set_index("sg_uf_residencia")
@@ -819,28 +824,34 @@ def main():
         silver_max = st.number_input("Silver (máx. score)", 0, 100, 69, key="silver")
     with col_t3:
         st.caption("Gold: score > Silver máx.")
-    if has_kpis and not df_kpis.empty and "ano" in df_kpis.columns:
-        df_t = df_kpis.copy()
-        df_t["ano"] = df_t["ano"].astype(int)
-        anos_t = sorted(df_t["ano"].unique())
-        if len(anos_t) >= 2:
-            first_year, last_year = min(anos_t), max(anos_t)
-            early = df_t[df_t["ano"] == first_year].set_index("sg_uf_residencia")
-            late = df_t[df_t["ano"] == last_year].set_index("sg_uf_residencia")
-            ufs_t = [u for u in set(early.index) & set(late.index) if u and str(u) != "NA"]
-            max_media = df_t["media_objetiva"].max()
-            tier_list = []
-            for uf in ufs_t:
-                m_early = early.loc[uf, "media_objetiva"] if uf in early.index else None
-                m_late = late.loc[uf, "media_objetiva"] if uf in late.index else None
-                queda = 100 * (1 - (m_late - m_early) / (max_media * 0.1 + 1e-6)) if m_early is not None and m_late is not None else 50
-                score = max(0, min(100, 0.3 * max(0, min(100, queda)) + 0.25 * (100 * (1 - (m_late or 0) / (max_media or 1)))))
-                tier_list.append({"uf": uf, "score": round(score, 1), "tier": tier_from_score(score, bronze_max, silver_max)})
-            tier_df = pd.DataFrame(tier_list).sort_values("score", ascending=False)
-            uf_sel_t = st.selectbox("Ver tier por UF", ["—"] + tier_df["uf"].tolist(), key="tier_uf")
-            if uf_sel_t != "—":
-                row = tier_df[tier_df["uf"] == uf_sel_t].iloc[0]
-                st.metric("UF", uf_sel_t); st.metric("Score Radar", row["score"]); st.metric("Tier", row["tier"])
+    if has_kpis and not df_kpis.empty:
+        try:
+            df_t = df_kpis.copy()
+            df_t["ano"] = df_t["ano"].astype(int)
+            anos_t = sorted(df_t["ano"].unique())
+            if len(anos_t) >= 2 and "sg_uf_residencia" in df_t.columns:
+                first_year, last_year = min(anos_t), max(anos_t)
+                early = df_t[df_t["ano"] == first_year].set_index("sg_uf_residencia")
+                late = df_t[df_t["ano"] == last_year].set_index("sg_uf_residencia")
+                ufs_t = [u for u in set(early.index) & set(late.index) if u and str(u) != "NA"]
+                max_media = df_t["media_objetiva"].max()
+                tier_list = []
+                for uf in ufs_t:
+                    m_early = early.loc[uf, "media_objetiva"] if uf in early.index else None
+                    m_late = late.loc[uf, "media_objetiva"] if uf in late.index else None
+                    queda = 100 * (1 - (m_late - m_early) / (max_media * 0.1 + 1e-6)) if m_early is not None and m_late is not None else 50
+                    score = max(0, min(100, 0.3 * max(0, min(100, queda)) + 0.25 * (100 * (1 - (m_late or 0) / (max_media or 1)))))
+                    tier_list.append({"uf": uf, "score": round(score, 1), "tier": tier_from_score(score, bronze_max, silver_max)})
+                tier_df = pd.DataFrame(tier_list).sort_values("score", ascending=False)
+                if not tier_df.empty:
+                    uf_sel_t = st.selectbox("Ver tier por UF", ["—"] + tier_df["uf"].tolist(), key="tier_uf")
+                    if uf_sel_t != "—":
+                        sel = tier_df[tier_df["uf"] == uf_sel_t]
+                        if not sel.empty:
+                            row = sel.iloc[0]
+                            st.metric("UF", uf_sel_t); st.metric("Score Radar", row["score"]); st.metric("Tier", row["tier"])
+        except (KeyError, Exception):
+            pass
     st.markdown("**Benefícios por tier:**")
     c1, c2, c3 = st.columns(3)
     with c1: tier_card_dark("Bronze", "Bronze", ["Relatórios agregados.", "Score Radar.", "Dashboards públicos."])
