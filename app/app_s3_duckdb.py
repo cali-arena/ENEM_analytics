@@ -786,7 +786,21 @@ def main():
                     st.session_state["llm_log"] = []
                 st.session_state["llm_log"].append({"intent": intent_id, "sql": sql, "rows": len(df_intent)})
             except Exception as e:
-                st.error(str(e))
+                err_msg = str(e)
+                if intent_id in INTENT_FALLBACK_NO_YEAR and ("ano" in err_msg.lower() and "not found" in err_msg.lower() or "Referenced column" in err_msg):
+                    try:
+                        sql = INTENT_FALLBACK_NO_YEAR[intent_id].format(
+                            kpis_uri=uris.get("gold_kpis", ""),
+                            limit=str(min(10, 50)),
+                        )
+                        df_intent = con.execute(sql).fetchdf()
+                        st.code(sql, language="sql")
+                        st.dataframe(df_intent.head(15), use_container_width=True, hide_index=True)
+                        st.caption("Consulta executada sem filtro por ano (Parquet sem coluna ano).")
+                    except Exception as e2:
+                        st.error(str(e2))
+                else:
+                    st.error(err_msg)
     st.markdown("---")
     question = st.text_input("Pergunta (LLM)", placeholder="Ex.: Quais UFs melhoraram mais?", key="llm_q")
     if st.button("Executar LLM") and question.strip():
