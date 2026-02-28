@@ -180,6 +180,19 @@ O script gera Parquets mínimos (kpis_uf_ano, cluster_profiles, cluster_evolutio
 | **Streamlit “run failed”** | Check Cloud logs for the exact DuckDB or R2 error; often endpoint typo or missing secret. |
 | **“Não foi possível preparar dados Gold” / “DEMO_GOLD_URL”** | The app running is `app_one_page.py` (expects local data or demo zip). To use **R2** with the data you uploaded: set **Main file path** to `app/app_s3_duckdb.py` and keep R2 secrets. |
 
+### Integração LLM: caixa de pergunta → banco Gold → mensagem formatada
+
+Fluxo já implementado no app R2 (`app_s3_duckdb.py`), seção **H — LLM Analyst Bot**:
+
+1. **Caixa de pergunta** — O usuário digita na "Pergunta (LLM)" e clica em **Executar LLM**.
+2. **LLM gera SQL** — O modelo (OpenAI ou DeepSeek) recebe a pergunta e o schema do gold e devolve um `SELECT` em DuckDB.
+3. **Banco Gold** — O SQL é executado no DuckDB que lê Parquet do R2 (`gold/kpis_uf_ano`, etc.); os dados vêm do data lake no R2, não de outro banco.
+4. **Decoder de mensagem** — O resultado (DataFrame) é passado por `decode_llm_result_to_message()` e exibido como texto formatado (resumo + principais linhas) antes da tabela.
+
+**R2:** O R2 neste projeto é o storage do **data lake** (Parquet silver/gold). **Não é obrigatório** armazenar as respostas do LLM no R2; o decoder só formata a resposta para exibir na UI. Se quiser persistir histórico de perguntas/respostas, aí pode gravar JSON (ou Parquet) no R2 ou em outro store.
+
+**DeepSeek:** Pode usar a API DeepSeek (compatível com OpenAI). Defina `DEEPSEEK_API_KEY` (e opcionalmente `DEEPSEEK_BASE_URL`, padrão `https://api.deepseek.com`). O app usa a lib `openai`; não precisa de lib específica da DeepSeek para armazenar nada — DeepSeek é só o provedor do modelo. Se tanto `OPENAI_API_KEY` quanto `DEEPSEEK_API_KEY` estiverem definidos, o app usa OpenAI primeiro.
+
 ---
 
 ## How to run the demo (2–3 min script)

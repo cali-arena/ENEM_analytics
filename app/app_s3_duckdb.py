@@ -335,22 +335,22 @@ def explain_chart(title: str, df: pd.DataFrame, filters: dict | None) -> str:
 
 
 # -----------------------------------------------------------------------------
-# Instant SQL Engine (R2) — um SQL por intent, só colunas que existem na layer
-# gold/kpis_uf_ano: sg_uf_residencia, media_objetiva, count_participantes (sem ano)
+# Instant SQL Engine (R2) — só perguntas válidas (colunas reais da layer, sem ano)
+# gold/kpis: sg_uf_residencia, media_objetiva, count_participantes
 # gold/cluster_profiles: cluster_id, size
 # -----------------------------------------------------------------------------
 INTENT_SQL_R2 = {
     "top_ufs_media_objetiva": "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}",
-    "media_objetiva_por_ano": "SELECT ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
-    "media_redacao_por_ano": "SELECT ROUND(AVG(media_objetiva),2) AS media_redacao, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
-    "pior_ano_media_objetiva": "SELECT ROUND(AVG(media_objetiva),2) AS media_objetiva FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
+    "media_objetiva_geral": "SELECT ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS total_participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
+    "total_participantes_por_uf": "SELECT sg_uf_residencia AS uf, SUM(count_participantes) AS total_participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}",
+    "ufs_menor_media_objetiva": "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 ASC LIMIT {limit}",
     "tamanho_clusters": "SELECT cluster_id, size FROM read_parquet('{profiles_uri}', hive_partitioning=0) ORDER BY size DESC LIMIT {limit}",
 }
 INTENT_LABELS_R2 = [
     ("top_ufs_media_objetiva", "Top UFs média objetiva"),
-    ("media_objetiva_por_ano", "Média objetiva por ano"),
-    ("media_redacao_por_ano", "Média redação por ano"),
-    ("pior_ano_media_objetiva", "Pior ano média objetiva"),
+    ("media_objetiva_geral", "Média objetiva geral"),
+    ("total_participantes_por_uf", "Total participantes por UF"),
+    ("ufs_menor_media_objetiva", "UFs com menor média objetiva"),
     ("tamanho_clusters", "Tamanho dos clusters"),
 ]
 
@@ -363,6 +363,49 @@ def build_intent_sql_r2(intent_id: str, params: dict, uris: dict) -> str:
     if intent_id not in INTENT_SQL_R2:
         raise ValueError(f"Unknown intent: {intent_id}")
     return INTENT_SQL_R2[intent_id].format(kpis_uri=kpis_uri, profiles_uri=profiles_uri, limit=limit)
+
+
+def decode_llm_result_to_message(question: str, sql: str, df: pd.DataFrame, max_rows: int = 10) -> str:
+    """
+    Decoder: transforma o resultado do banco gold (DataFrame) em mensagem formatada legível.
+    Não precisa armazenar no R2; é só formatação da resposta para exibir na UI.
+    """
+    if df is None or df.empty:
+        return f"**Resposta:** Nenhum registro encontrado para a pergunta."
+    n = len(df)
+    head = df.head(max_rows)
+    parts = [f"**Resposta:** Encontrados **{n}** registro(s) no gold."]
+    # Resumo das primeiras linhas em texto legível
+    rows_text = []
+    for _, row in head.iterrows():
+        pairs = [f"{k}: {v}" for k, v in row.items()]
+        rows_text.append(" · ".join(pairs))
+    if rows_text:
+        parts.append("\n\n*Principais:*\n" + "\n".join(f"- {t}" for t in rows_text))
+    if n > max_rows:
+        parts.append(f"\n*… e mais {n - max_rows} registro(s).*")
+    return "\n".join(parts)
+
+
+def _get_llm_client():
+    """
+    Retorna cliente OpenAI-compatible: OpenAI ou DeepSeek.
+    DeepSeek: use DEEPSEEK_API_KEY e opcionalmente DEEPSEEK_BASE_URL (default api.deepseek.com).
+    """
+    try:
+        import openai
+    except ImportError:
+        return None, None
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    base_url = None
+    model = "gpt-4o-mini"
+    if api_key:
+        return openai.OpenAI(api_key=api_key), model
+    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+    if api_key:
+        base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
+        return openai.OpenAI(api_key=api_key, base_url=base_url), "deepseek-chat"
+    return None, None
 
 
 def _detect_kpis_year_column(con, kpis_uri: str) -> str | None:
@@ -771,16 +814,15 @@ def main():
             except Exception as e:
                 st.error(str(e))
     st.markdown("---")
-    question = st.text_input("Pergunta (LLM)", placeholder="Ex.: Quais UFs melhoraram mais?", key="llm_q")
+    question = st.text_input("Pergunta (LLM)", placeholder="Ex.: Quais UFs têm maior média objetiva?", key="llm_q")
     if st.button("Executar LLM") and question.strip():
-        if not os.environ.get("OPENAI_API_KEY"):
-            st.info("LLM desativado; configure OPENAI_API_KEY ou use os intents acima.")
+        client, model = _get_llm_client()
+        if not client:
+            st.info("LLM desativado; configure OPENAI_API_KEY ou DEEPSEEK_API_KEY (ou use os intents acima).")
         else:
             try:
-                import openai
-                client = openai.OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-                prompt = f"Gere apenas um SELECT em DuckDB sobre a tabela lida com read_parquet. Use apenas: read_parquet('{uris['gold_kpis']}', hive_partitioning=0). Colunas típicas: ano, sg_uf_residencia, media_objetiva, media_redacao, count_participantes. Pergunta: {question}. Retorne só o SQL, sem explicação."
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}], temperature=0)
+                prompt = f"Gere apenas um SELECT em DuckDB. Use APENAS: read_parquet('{uris['gold_kpis']}', hive_partitioning=0). Colunas permitidas (NÃO use 'ano'): sg_uf_residencia, media_objetiva, count_participantes. Pergunta: {question}. Retorne só o SQL, sem explicação."
+                r = client.chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], temperature=0)
                 sql = (r.choices[0].message.content or "").strip()
                 sql = re.sub(r"```\w*\n?", "", sql).strip()
                 if not sql.upper().startswith("SELECT"):
@@ -788,6 +830,9 @@ def main():
                 else:
                     df_res = con.execute(sql).fetchdf()
                     st.code(sql, language="sql")
+                    # Decoder: resultado do gold em mensagem formatada (não precisa armazenar no R2)
+                    msg = decode_llm_result_to_message(question, sql, df_res, max_rows=10)
+                    st.markdown(msg)
                     st.dataframe(df_res.head(20), use_container_width=True, hide_index=True)
                     if "llm_log" not in st.session_state:
                         st.session_state["llm_log"] = []
