@@ -334,37 +334,6 @@ def explain_chart(title: str, df: pd.DataFrame, filters: dict | None) -> str:
     return _heuristic_explanation(title, df, filters)
 
 
-# -----------------------------------------------------------------------------
-# Instant SQL Engine (R2) — só perguntas válidas (colunas reais da layer, sem ano)
-# gold/kpis: sg_uf_residencia, media_objetiva, count_participantes
-# gold/cluster_profiles: cluster_id, size
-# -----------------------------------------------------------------------------
-INTENT_SQL_R2 = {
-    "top_ufs_media_objetiva": "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}",
-    "media_objetiva_geral": "SELECT ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS total_participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)",
-    "total_participantes_por_uf": "SELECT sg_uf_residencia AS uf, SUM(count_participantes) AS total_participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT {limit}",
-    "ufs_menor_media_objetiva": "SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 ASC LIMIT {limit}",
-    "tamanho_clusters": "SELECT cluster_id, size FROM read_parquet('{profiles_uri}', hive_partitioning=0) ORDER BY size DESC LIMIT {limit}",
-}
-INTENT_LABELS_R2 = [
-    ("top_ufs_media_objetiva", "Top UFs média objetiva"),
-    ("media_objetiva_geral", "Média objetiva geral"),
-    ("total_participantes_por_uf", "Total participantes por UF"),
-    ("ufs_menor_media_objetiva", "UFs com menor média objetiva"),
-    ("tamanho_clusters", "Tamanho dos clusters"),
-]
-
-
-def build_intent_sql_r2(intent_id: str, params: dict, uris: dict) -> str:
-    """Um SQL por intent, integrado às layers (sem coluna ano)."""
-    kpis_uri = uris.get("gold_kpis", "")
-    profiles_uri = uris.get("gold_cluster_profiles", "")
-    limit = str(min(int(params.get("limit", 10)), 50))
-    if intent_id not in INTENT_SQL_R2:
-        raise ValueError(f"Unknown intent: {intent_id}")
-    return INTENT_SQL_R2[intent_id].format(kpis_uri=kpis_uri, profiles_uri=profiles_uri, limit=limit)
-
-
 def decode_llm_result_to_message(question: str, sql: str, df: pd.DataFrame, max_rows: int = 10) -> str:
     """
     Decoder: transforma o resultado do banco gold (DataFrame) em mensagem formatada legível.
@@ -389,22 +358,40 @@ def decode_llm_result_to_message(question: str, sql: str, df: pd.DataFrame, max_
 
 def _get_llm_client():
     """
-    Retorna cliente OpenAI-compatible: OpenAI ou DeepSeek.
-    DeepSeek: use DEEPSEEK_API_KEY e opcionalmente DEEPSEEK_BASE_URL (default api.deepseek.com).
+    Cliente LLM (ordem de prioridade): OpenAI, DeepSeek, Ollama.
+    Ollama (grátis, local): instale https://ollama.com e rode `ollama run llama3.2`.
+    Defina OLLAMA_BASE_URL=http://localhost:11434/v1 (ou URL do host no Cloud).
+    No Streamlit Cloud: salve em Secrets: OLLAMA_BASE_URL ou DEEPSEEK_API_KEY.
     """
     try:
         import openai
     except ImportError:
         return None, None
-    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
-    base_url = None
-    model = "gpt-4o-mini"
+    secrets = {}
+    try:
+        if hasattr(st, "secrets") and st.secrets:
+            secrets = dict(st.secrets)
+    except Exception:
+        pass
+
+    def _get(key: str, default: str = "") -> str:
+        return (secrets.get(key) or os.environ.get(key) or default) or ""
+
+    api_key = _get("OPENAI_API_KEY").strip()
     if api_key:
-        return openai.OpenAI(api_key=api_key), model
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
+        return openai.OpenAI(api_key=api_key), "gpt-4o-mini"
+
+    api_key = _get("DEEPSEEK_API_KEY").strip()
     if api_key:
-        base_url = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
-        return openai.OpenAI(api_key=api_key, base_url=base_url), "deepseek-chat"
+        base_url = _get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
+        return openai.OpenAI(api_key=api_key, base_url=base_url or "https://api.deepseek.com"), "deepseek-chat"
+
+    ollama_url = _get("OLLAMA_BASE_URL").strip() or os.environ.get("OLLAMA_BASE_URL", "").strip()
+    if not ollama_url:
+        ollama_url = "http://localhost:11434/v1"  # padrão local (instale Ollama e rode ollama run llama3.2)
+    if ollama_url:
+        model = _get("OLLAMA_MODEL").strip() or "llama3.2"
+        return openai.OpenAI(api_key="ollama", base_url=ollama_url.rstrip("/")), model
     return None, None
 
 
@@ -797,36 +784,11 @@ def main():
 
     # ----- H) LLM Bot + Instant SQL -----
     section_header_anchor("H — LLM Analyst Bot (Grounded)", "sec-llm", level=2)
-    st.markdown("#### Instant SQL Engine — consultas rápidas (layers R2)")
-    for intent_id, label in INTENT_LABELS_R2:
-        if st.button(label, key=f"intent_{intent_id}"):
-            params = {"limit": 10}
-            try:
-                sql = build_intent_sql_r2(intent_id, params, uris)
-                # Proteção: Parquet no R2 não tem coluna ano — nunca usar ano no SQL
-                if " ano " in sql or "ano BETWEEN" in sql or "WHERE ano" in sql:
-                    if intent_id in INTENT_SQL_R2:
-                        sql = INTENT_SQL_R2[intent_id].format(
-                            kpis_uri=uris.get("gold_kpis", ""),
-                            profiles_uri=uris.get("gold_cluster_profiles", ""),
-                            limit="10",
-                        )
-                start = time.perf_counter()
-                df_intent = con.execute(sql).fetchdf()
-                duration = time.perf_counter() - start
-                st.code(sql, language="sql")
-                st.dataframe(df_intent.head(15), use_container_width=True, hide_index=True)
-                if "llm_log" not in st.session_state:
-                    st.session_state["llm_log"] = []
-                st.session_state["llm_log"].append({"intent": intent_id, "sql": sql, "rows": len(df_intent)})
-            except Exception as e:
-                st.error(str(e))
-    st.markdown("---")
     question = st.text_input("Pergunta (LLM)", placeholder="Ex.: Quais UFs têm maior média objetiva?", key="llm_q")
     if st.button("Executar LLM") and question.strip():
         client, model = _get_llm_client()
         if not client:
-            st.info("LLM desativado; configure OPENAI_API_KEY ou DEEPSEEK_API_KEY (ou use os intents acima).")
+            st.info("LLM desativado; configure OPENAI_API_KEY, DEEPSEEK_API_KEY ou OLLAMA_BASE_URL (Ollama grátis).")
         else:
             try:
                 prompt = f"Gere apenas um SELECT em DuckDB. Use APENAS: read_parquet('{uris['gold_kpis']}', hive_partitioning=0). Colunas permitidas (NÃO use 'ano'): sg_uf_residencia, media_objetiva, count_participantes. Pergunta: {question}. Retorne só o SQL, sem explicação."

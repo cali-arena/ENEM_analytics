@@ -101,6 +101,10 @@ streamlit run app/app_one_page.py
 
 # R2 + DuckDB: Parquet on Cloudflare R2 (see "Dashboard on R2" below)
 streamlit run app/app_s3_duckdb.py
+
+# Com Ollama local (LLM grátis): sobe Ollama + Streamlit
+./run_with_ollama.ps1   # Windows PowerShell
+# ou: ./run_with_ollama.sh   # Linux/macOS
 ```
 
 Or:
@@ -151,7 +155,15 @@ A separate **insanely fast** app reads Parquet directly from Cloudflare R2 (S3-c
 
    - Save. Streamlit Cloud will redeploy; the app will read these as `st.secrets["R2_ACCESS_KEY"]` etc. (no `secrets.toml` file is used on Cloud).
 
-3. Deploy. On first load the R2 app runs a self-test against `s3://<bucket>/silver/**/*.parquet` and `gold/**/*.parquet`. If that fails, see troubleshooting below.
+3. **LLM grátis (Pergunta LLM no app):** o app usa, nesta ordem: OpenAI → DeepSeek → **Ollama**.
+   - **Local (Ollama, zero custo):** instale [Ollama](https://ollama.com), rode `ollama run llama3.2`. O app usa `http://localhost:11434/v1` automaticamente.
+   - **Streamlit Cloud:** salve em **Secrets** uma das opções:
+     - `DEEPSEEK_API_KEY` = sua chave DeepSeek (tem free tier).
+     - `OLLAMA_BASE_URL` = URL do Ollama exposto (ex.: `https://seu-host.com/v1`) se você hospedar Ollama em um VPS/serviço.
+     - `OPENAI_API_KEY` = chave OpenAI (paga).
+   Assim o Cloud consegue chamar o LLM e os “tokens” ficam seguros nos Secrets.
+
+4. Deploy. On first load the R2 app runs a self-test against `s3://<bucket>/silver/**/*.parquet` and `gold/**/*.parquet`. If that fails, see troubleshooting below.
 
 ### R2 layout
 
