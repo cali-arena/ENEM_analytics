@@ -892,6 +892,40 @@ def _main_body():
 
     # ----- H) LLM Bot + Instant SQL -----
     section_header_anchor("H — LLM Analyst Bot (Grounded)", "sec-llm", level=2)
+    st.markdown("**Para apresentar agora (grátis, sem API):** clique em uma consulta pronta.")
+    kpis_uri = uris.get("gold_kpis", "")
+    profiles_uri = uris.get("gold_cluster_profiles", "")
+    if kpis_uri:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            if st.button("Top 10 UFs por média objetiva", key="demo_top_ufs"):
+                sql_d = f"SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+                try:
+                    df_d = con.execute(sql_d).fetchdf()
+                    st.session_state["_demo_sql"], st.session_state["_demo_df"] = sql_d, df_d
+                except Exception as ex:
+                    st.error(str(ex))
+        with c2:
+            if st.button("Total participantes por UF", key="demo_total_uf"):
+                sql_d = f"SELECT sg_uf_residencia AS uf, SUM(count_participantes) AS total FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+                try:
+                    df_d = con.execute(sql_d).fetchdf()
+                    st.session_state["_demo_sql"], st.session_state["_demo_df"] = sql_d, df_d
+                except Exception as ex:
+                    st.error(str(ex))
+        with c3:
+            if st.button("Média objetiva geral", key="demo_media_geral"):
+                sql_d = f"SELECT ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS total_participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0)"
+                try:
+                    df_d = con.execute(sql_d).fetchdf()
+                    st.session_state["_demo_sql"], st.session_state["_demo_df"] = sql_d, df_d
+                except Exception as ex:
+                    st.error(str(ex))
+        if "_demo_sql" in st.session_state:
+            st.code(st.session_state["_demo_sql"], language="sql")
+            st.dataframe(st.session_state["_demo_df"].head(15), use_container_width=True, hide_index=True)
+    st.markdown("---")
+    st.markdown("**Pergunta (LLM)** — usa API (DeepSeek/OpenAI/Ollama); se der 402, use os botões acima.")
     question = st.text_input("Pergunta (LLM)", placeholder="Ex.: Quais UFs têm maior média objetiva?", key="llm_q")
     if st.button("Executar LLM") and question.strip():
         client, model = _get_llm_client()
