@@ -471,6 +471,10 @@ def main():
     uf_param = uf_filter if uf_filter != "Todos" else None
     df_kpis = query_kpis(con_key, uris["gold_kpis"], year_min, year_max, uf_param)
 
+    # Valores demonstrativos manuais quando não há dados no R2 (mais rápido)
+    DEMO_KPIS = {"media_objetiva": 515.5, "media_redacao": 634.7, "pct_presence": 100.0, "total_participantes": 12_839_968}
+    use_demo = df_kpis.empty
+
     # ----- A) Visão geral -----
     section_header_anchor("A — Visão geral", "sec-executive", level=2)
     presence_warning = False
@@ -489,16 +493,24 @@ def main():
         kpi_pres = f"{agg['pct_presence'].iloc[-1]:.1f}%" if len(agg) else "—"
         kpi_total = f"{int(df_kpis['count_participantes'].sum()):,}" if "count_participantes" in df_kpis.columns else "—"
     else:
-        kpi_media_obj = kpi_media_red = kpi_pres = kpi_total = "—"
-    st.markdown("- **Média objetiva** e **média redação** no último ano do período. **Presença**: % que fizeram as 4 provas.")
+        kpi_media_obj = f"{DEMO_KPIS['media_objetiva']}"
+        kpi_media_red = f"{DEMO_KPIS['media_redacao']}"
+        kpi_pres = f"{DEMO_KPIS['pct_presence']:.1f}%"
+        kpi_total = f"{DEMO_KPIS['total_participantes']:,}"
+    st.markdown("- **Média objetiva (provas objetivas)** e **média redação** refletem o desempenho no período selecionado.")
+    st.markdown("- **Presença** indica % de participantes que fizeram as 4 provas objetivas.")
     if presence_warning and has_kpis:
         st.caption("⚠️ Presença não disponível; exibido 100%.")
+    if use_demo:
+        st.caption("**Valores demonstrativos** (sem dados no R2 — use *Refresh cache* após subir dados ou rode `python scripts/build_and_upload_demo_r2.py`).")
     kpi_row([
         ("Média objetiva (último ano)", kpi_media_obj),
         ("Média redação (último ano)", kpi_media_red),
         ("Presença média (%)", kpi_pres),
         ("Total participantes", kpi_total),
     ])
+    if use_demo or has_kpis:
+        st.caption(f"**Data freshness:** Anos {year_min}–{year_max} | Tabelas carregadas: {len(loaded)} ({', '.join(loaded) or 'Gold + Silver'})")
     if st.button("Gerar resumo executivo", key="btn_story"):
         qr_df = query_quality_report(con_key, uris["silver_quality"])
         nr_df = query_null_report(con_key, uris["silver_null"])
@@ -548,26 +560,40 @@ def main():
 
     # ----- D) Overview Nacional -----
     section_header_anchor("D — Overview Nacional (KPIs e tendências)", "sec-overview", level=2)
-    if not has_kpis:
+    if not has_kpis and not use_demo:
         not_generated_yet("gold.kpis_uf_ano não encontrado no R2 (gold/kpis_uf_ano/**/*.parquet).")
-    elif df_kpis.empty:
+    elif df_kpis.empty and not use_demo:
         st.warning("Nenhum dado para os filtros.")
     else:
-        agg_cols = {"media_objetiva": "mean", "media_redacao": "mean", "count_participantes": "sum"}
-        if "pct_presence_full" in df_kpis.columns:
-            agg_cols["pct_presence_full"] = "mean"
-        agg = df_kpis.groupby("ano").agg(agg_cols).reset_index()
-        if "pct_presence_full" in agg.columns:
-            agg = agg.rename(columns={"pct_presence_full": "pct_presence"})
+        if use_demo:
+            agg = pd.DataFrame({
+                "ano": [2020, 2021, 2022, 2023, 2024],
+                "media_objetiva": [500.0, 505.0, 510.0, 512.5, DEMO_KPIS["media_objetiva"]],
+                "media_redacao": [600.0, 615.0, 625.0, 630.0, DEMO_KPIS["media_redacao"]],
+            })
+            ufs_demo = ["SP", "MG", "RJ", "RS", "PR", "BA", "SC", "GO", "PE", "CE", "ES", "DF", "PA", "MT", "MS", "PB", "RN", "AL", "SE", "PI", "MA", "RO", "TO", "AC", "AP", "AM", "RR"]
+            by_uf = pd.DataFrame({
+                "sg_uf_residencia": ufs_demo,
+                "media_objetiva": [520 + i * 2 for i in range(len(ufs_demo))],
+                "count": [400000 - i * 10000 for i in range(len(ufs_demo))],
+            })
+            st.caption("**Gráficos demonstrativos** (dados manuais — suba dados no R2 para valores reais).")
+        else:
+            agg_cols = {"media_objetiva": "mean", "media_redacao": "mean", "count_participantes": "sum"}
+            if "pct_presence_full" in df_kpis.columns:
+                agg_cols["pct_presence_full"] = "mean"
+            agg = df_kpis.groupby("ano").agg(agg_cols).reset_index()
+            if "pct_presence_full" in agg.columns:
+                agg = agg.rename(columns={"pct_presence_full": "pct_presence"})
+            by_uf = df_kpis.groupby("sg_uf_residencia").agg(media_objetiva=("media_objetiva", "mean"), count=("count_participantes", "sum")).reset_index()
+            by_uf = by_uf[by_uf["sg_uf_residencia"].notna() & (by_uf["sg_uf_residencia"].astype(str).str.strip() != "") & (by_uf["sg_uf_residencia"].astype(str) != "NA")]
+            by_uf = by_uf.sort_values("media_objetiva", ascending=False)
         if HAS_PLOTLY:
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=agg["ano"], y=agg["media_objetiva"], name="Média objetiva", mode="lines+markers"))
             fig.add_trace(go.Scatter(x=agg["ano"], y=agg["media_redacao"], name="Média redação", mode="lines+markers"))
             fig.update_layout(xaxis_title="Ano", yaxis_title="Nota média", height=350)
             st.plotly_chart(fig, use_container_width=True)
-        by_uf = df_kpis.groupby("sg_uf_residencia").agg(media_objetiva=("media_objetiva", "mean"), count=("count_participantes", "sum")).reset_index()
-        by_uf = by_uf[by_uf["sg_uf_residencia"].notna() & (by_uf["sg_uf_residencia"].astype(str).str.strip() != "") & (by_uf["sg_uf_residencia"].astype(str) != "NA")]
-        by_uf = by_uf.sort_values("media_objetiva", ascending=False)
         if HAS_PLOTLY and not by_uf.empty:
             st.plotly_chart(px.bar(by_uf.head(27), x="sg_uf_residencia", y="media_objetiva", labels={"sg_uf_residencia": "UF", "media_objetiva": "Média objetiva"}).update_layout(height=400, xaxis_tickangle=-45), use_container_width=True)
         if st.button("Explicar tendência", key="exp_trend"):
