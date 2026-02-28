@@ -75,6 +75,38 @@ def _safe_secrets_dict() -> dict:
 
 
 # -----------------------------------------------------------------------------
+# Gráfico D — Overview Nacional: dados fixos (igual ao local host)
+# -----------------------------------------------------------------------------
+OVERVIEW_CHART_MOCK = pd.DataFrame({
+    "ano": [2020, 2021, 2022, 2023, 2024],
+    "media_objetiva": [500.0, 505.0, 515.0, 510.0, 520.0],
+    "media_redacao": [565.0, 590.0, 595.0, 590.0, 605.0],
+})
+
+
+def _render_overview_chart():
+    """Sempre renderiza o gráfico de tendência igual ao local host (2020–2024, crescimento da média)."""
+    if not HAS_PLOTLY:
+        return
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(
+        x=OVERVIEW_CHART_MOCK["ano"], y=OVERVIEW_CHART_MOCK["media_objetiva"],
+        name="Média objetiva", mode="lines+markers"
+    ))
+    fig.add_trace(go.Scatter(
+        x=OVERVIEW_CHART_MOCK["ano"], y=OVERVIEW_CHART_MOCK["media_redacao"],
+        name="Média redação", mode="lines+markers"
+    ))
+    fig.update_layout(
+        title="D — Overview Nacional (KPIs e tendências)",
+        xaxis_title="Ano", yaxis_title="Nota média", height=350,
+        xaxis=dict(dtick=1, range=[2019.5, 2024.5]),
+        yaxis=dict(range=[500, 620]),
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# -----------------------------------------------------------------------------
 # R2 URIs (paths; override via R2_SILVER_PREFIX / R2_GOLD_PREFIX)
 # -----------------------------------------------------------------------------
 def _gold_kpis_uri(config: dict) -> str:
@@ -694,6 +726,9 @@ def _main_body():
 
     # ----- D) Overview Nacional -----
     section_header_anchor("D — Overview Nacional (KPIs e tendências)", "sec-overview", level=2)
+    # Gráfico de tendência: sempre igual ao host (fora do if/else para não depender do R2)
+    st.caption("**Gráfico fixo** (igual ao local host — crescimento da média 2020–2024).")
+    _render_overview_chart()
     if not has_kpis and not use_demo:
         not_generated_yet("gold.kpis_uf_ano não encontrado no R2 (gold/kpis_uf_ano/**/*.parquet).")
     elif df_kpis.empty and not use_demo:
@@ -735,31 +770,11 @@ def _main_body():
             except (KeyError, Exception):
                 agg = pd.DataFrame({"ano": [year_max], "media_objetiva": [DEMO_KPIS["media_objetiva"]], "media_redacao": [DEMO_KPIS["media_redacao"]]})
                 by_uf = pd.DataFrame()
-        # Gráfico de tendência: sempre igual ao local host (mock 2020–2024) para ver o crescimento da linha da média
-        agg_for_chart = pd.DataFrame({
-            "ano": [2020, 2021, 2022, 2023, 2024],
-            "media_objetiva": [565.0, 610.0, 615.0, 615.0, 625.0],
-            "media_redacao": [505.0, 505.0, 515.0, 515.0, 520.0],
-        })
-        st.caption("**D — Overview Nacional:** gráfico fixo (igual ao local host — crescimento da média 2020–2024).")
-        if HAS_PLOTLY and not agg_for_chart.empty:
-            fig = go.Figure()
-            x_vals = agg_for_chart["ano"].tolist() if "ano" in agg_for_chart.columns else list(range(len(agg_for_chart)))
-            if "media_objetiva" in agg_for_chart.columns:
-                fig.add_trace(go.Scatter(x=x_vals, y=agg_for_chart["media_objetiva"], name="Média objetiva", mode="lines+markers"))
-            if "media_redacao" in agg_for_chart.columns:
-                fig.add_trace(go.Scatter(x=x_vals, y=agg_for_chart["media_redacao"], name="Média redação", mode="lines+markers"))
-            fig.update_layout(
-                xaxis_title="Ano", yaxis_title="Nota média", height=350,
-                xaxis=dict(dtick=1, range=[2019.5, 2024.5]),
-                yaxis=dict(range=[500, 640]),
-            )
-            st.plotly_chart(fig, use_container_width=True)
         if HAS_PLOTLY and not by_uf.empty:
             st.plotly_chart(px.bar(by_uf.head(27), x="sg_uf_residencia", y="media_objetiva", labels={"sg_uf_residencia": "UF", "media_objetiva": "Média objetiva"}).update_layout(height=400, xaxis_tickangle=-45), use_container_width=True)
         if st.button("Explicar tendência", key="exp_trend"):
-            cols = [c for c in ["ano", "media_objetiva", "media_redacao"] if c in agg_for_chart.columns]
-            st.info(explain_chart("Tendência média por ano", agg_for_chart[cols] if cols else agg_for_chart, {"year_start": year_min, "year_end": year_max, "uf": uf_filter}))
+            cols = [c for c in ["ano", "media_objetiva", "media_redacao"] if c in OVERVIEW_CHART_MOCK.columns]
+            st.info(explain_chart("Tendência média por ano", OVERVIEW_CHART_MOCK[cols] if cols else OVERVIEW_CHART_MOCK, {"year_start": year_min, "year_end": year_max, "uf": uf_filter}))
     section_divider()
 
     # ----- E) Radar de Prioridade -----
