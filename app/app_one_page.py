@@ -822,7 +822,13 @@ else:
     profiles = con.execute("SELECT * FROM gold.cluster_profiles").fetchdf()
     st.dataframe(profiles, use_container_width=True, hide_index=True)
     if not profiles.empty and "size" in profiles.columns:
-        fig_dist = px.pie(profiles, values="size", names="cluster_id", title="Distribuição por cluster")
+        fig_dist = px.scatter(
+            profiles, x="cluster_id", y="size",
+            size="size", color="cluster_id",
+            title="Distribuição por cluster (dispersão)",
+            labels={"cluster_id": "Cluster", "size": "Tamanho"}
+        )
+        fig_dist.update_layout(showlegend=True, height=400)
         st.plotly_chart(fig_dist, use_container_width=True)
     if has_cluster_evolution:
         ev_df = con.execute("SELECT * FROM gold.cluster_evolution_uf_ano").fetchdf()
