@@ -43,6 +43,38 @@ from app.components import (
 )
 
 # -----------------------------------------------------------------------------
+# Secrets (Streamlit Cloud pode ter formato que quebra dict(st.secrets))
+# -----------------------------------------------------------------------------
+def _safe_secrets_dict() -> dict:
+    """Constrói um dict flat a partir de st.secrets sem assumir que dict(st.secrets) funciona."""
+    out: dict = {}
+    try:
+        if not hasattr(st, "secrets") or st.secrets is None:
+            return out
+        raw = st.secrets
+        if isinstance(raw, dict):
+            for k, v in raw.items():
+                if isinstance(v, (str, int, float, bool)):
+                    out[str(k)] = str(v).strip()
+                elif isinstance(v, dict):
+                    for k2, v2 in v.items():
+                        if isinstance(v2, (str, int, float, bool)):
+                            out[str(k2)] = str(v2).strip()
+        else:
+            for key in ("R2_ACCESS_KEY", "R2_SECRET_KEY", "R2_ENDPOINT", "R2_BUCKET", "R2_REGION",
+                       "DEEPSEEK_API_KEY", "OPENAI_API_KEY", "OLLAMA_BASE_URL", "OLLAMA_MODEL"):
+                try:
+                    v = raw.get(key) if hasattr(raw, "get") else getattr(raw, key, None)
+                    if v is not None:
+                        out[key] = str(v).strip()
+                except Exception:
+                    pass
+    except Exception:
+        pass
+    return out
+
+
+# -----------------------------------------------------------------------------
 # R2 URIs (paths; override via R2_SILVER_PREFIX / R2_GOLD_PREFIX)
 # -----------------------------------------------------------------------------
 def _gold_kpis_uri(config: dict) -> str:
@@ -360,19 +392,13 @@ def _get_llm_client():
     """
     Cliente LLM (ordem de prioridade): OpenAI, DeepSeek, Ollama.
     Ollama (grátis, local): instale https://ollama.com e rode `ollama run llama3.2`.
-    Defina OLLAMA_BASE_URL=http://localhost:11434/v1 (ou URL do host no Cloud).
-    No Streamlit Cloud: salve em Secrets: OLLAMA_BASE_URL ou DEEPSEEK_API_KEY.
+    No Streamlit Cloud: salve em Secrets: DEEPSEEK_API_KEY ou OLLAMA_BASE_URL.
     """
     try:
         import openai
     except ImportError:
         return None, None
-    secrets = {}
-    try:
-        if hasattr(st, "secrets") and st.secrets:
-            secrets = dict(st.secrets)
-    except Exception:
-        pass
+    secrets = _safe_secrets_dict()
 
     def _get(key: str, default: str = "") -> str:
         return (secrets.get(key) or os.environ.get(key) or default) or ""
@@ -423,10 +449,7 @@ def main():
     inject_dark_theme_css()
     st.markdown('<p id="top"></p>', unsafe_allow_html=True)
 
-    try:
-        secrets = dict(st.secrets) if hasattr(st, "secrets") and st.secrets else {}
-    except Exception:
-        secrets = {}
+    secrets = _safe_secrets_dict()
     config = get_r2_config(secrets)
     if not config["access_key"] or not config["secret_key"]:
         st.error("R2 credentials missing. Set R2_ACCESS_KEY and R2_SECRET_KEY in Secrets.")
