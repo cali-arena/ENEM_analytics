@@ -911,13 +911,27 @@ def _main_body():
             except Exception as e:
                 err = str(e).lower()
                 if "402" in str(e) or "insufficient balance" in err or "insufficient balance" in str(e):
-                    st.error("**Saldo insuficiente** na API do LLM (DeepSeek/OpenAI). Recarregue créditos na sua conta do provedor ou use outra chave. Para uso grátis: instale Ollama local e use `OLLAMA_BASE_URL`.")
+                    st.error("**Saldo insuficiente** na API do LLM (DeepSeek/OpenAI). Recarregue créditos ou use Ollama local com `OLLAMA_BASE_URL`.")
                 elif "429" in str(e) or "rate limit" in err:
-                    st.error("**Limite de uso** da API atingido. Aguarde alguns minutos ou use outra chave/Ollama local.")
-                elif "401" in str(e) or "unauthorized" in err or "invalid" in err and "key" in err:
+                    st.error("**Limite de uso** da API atingido. Aguarde alguns minutos ou use Ollama local.")
+                elif "401" in str(e) or "unauthorized" in err or ("invalid" in err and "key" in err):
                     st.error("**Chave da API inválida ou expirada.** Verifique OPENAI_API_KEY ou DEEPSEEK_API_KEY nos Secrets.")
                 else:
                     st.error(f"Erro no LLM: {e}")
+                # Fallback: consulta sugerida quando a pergunta é sobre maiores notas / UFs
+                q_lower = question.strip().lower()
+                if "uf" in q_lower and ("maior" in q_lower or "nota" in q_lower or "melhor" in q_lower or "melhoraram" in q_lower):
+                    kpis_uri = uris.get("gold_kpis", "")
+                    if kpis_uri:
+                        sql_fallback = f"SELECT sg_uf_residencia AS uf, ROUND(AVG(media_objetiva),2) AS media_objetiva, SUM(count_participantes) AS participantes FROM read_parquet('{kpis_uri}', hive_partitioning=0) WHERE sg_uf_residencia IS NOT NULL AND sg_uf_residencia != 'NA' GROUP BY 1 ORDER BY 2 DESC LIMIT 10"
+                        st.caption("**Sugestão (sem LLM):** consulta por maiores médias objetivas por UF.")
+                        if st.button("Executar esta consulta", key="run_fallback_llm"):
+                            try:
+                                df_f = con.execute(sql_fallback).fetchdf()
+                                st.code(sql_fallback, language="sql")
+                                st.dataframe(df_f.head(15), use_container_width=True, hide_index=True)
+                            except Exception as ex:
+                                st.error(str(ex))
 
     section_divider()
     st.markdown('[↑ Voltar ao topo](#top)')
